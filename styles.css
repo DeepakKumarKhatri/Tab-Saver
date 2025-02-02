@@ -100,6 +100,12 @@ h1 {
   margin-bottom: 10px;
 }
 
+#noTabsMessage {
+  text-align: center;
+  color: #7f8c8d;
+  font-style: italic;
+}
+
 #tabList {
   list-style-type: none;
   padding: 0;
@@ -121,23 +127,32 @@ h1 {
   width: 16px;
   height: 16px;
   margin-right: 10px;
+  flex-shrink: 0;
+}
+
+#tabList .tab-info {
+  flex-grow: 1;
+  min-width: 0;
 }
 
 #tabList a {
-  flex-grow: 1;
   color: var(--text-color);
   text-decoration: none;
   font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
 }
 
 #tabList a:hover {
   text-decoration: underline;
 }
 
-#tabList span {
+#tabList .metadata {
   font-size: 12px;
   color: #7f8c8d;
-  margin-right: 10px;
+  margin-top: 2px;
 }
 
 .deleteButton {
@@ -149,9 +164,14 @@ h1 {
   font-size: 12px;
   cursor: pointer;
   transition: background-color 0.3s ease;
+  flex-shrink: 0;
+  margin-left: 10px;
 }
 
 .deleteButton:hover {
   background-color: #c0392b;
 }
 
+.hidden {
+  display: none;
+}

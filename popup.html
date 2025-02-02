@@ -20,14 +20,13 @@
           <button id="openAll" class="btn btn-secondary">Open All Tabs</button>
         </div>
         <div class="category-management">
-          <select id="category">
-            <option value="default">Default</option>
-          </select>
+          <select id="category"></select>
           <input type="text" id="newCategory" placeholder="New Category" />
           <button id="addCategory" class="btn btn-small">Add</button>
         </div>
         <div id="savedTabs">
           <h2>Saved Tabs</h2>
+          <p id="noTabsMessage" class="hidden">No saved tabs</p>
           <ul id="tabList"></ul>
         </div>
       </main>
@@ -35,4 +34,3 @@
     <script src="popup.js"></script>
   </body>
 </html>
-
