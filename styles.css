@@ -1,0 +1,157 @@
+:root {
+  --primary-color: #3498db;
+  --secondary-color: #2ecc71;
+  --background-color: #f5f7fa;
+  --text-color: #34495e;
+  --border-color: #bdc3c7;
+}
+
+body {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background-color: var(--background-color);
+  color: var(--text-color);
+  margin: 0;
+  padding: 0;
+}
+
+.container {
+  width: 350px;
+  padding: 20px;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+h1 {
+  color: var(--primary-color);
+  font-size: 24px;
+  margin: 0;
+}
+
+.search-bar {
+  margin-bottom: 15px;
+}
+
+#search {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.actions {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 15px;
+}
+
+.btn {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.3s ease;
+}
+
+.btn-primary {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: #2980b9;
+}
+
+.btn-secondary {
+  background-color: var(--secondary-color);
+  color: white;
+}
+
+.btn-secondary:hover {
+  background-color: #27ae60;
+}
+
+.btn-small {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.category-management {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+#category,
+#newCategory {
+  flex-grow: 1;
+  padding: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+#savedTabs h2 {
+  font-size: 18px;
+  margin-bottom: 10px;
+}
+
+#tabList {
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+}
+
+#tabList li {
+  display: flex;
+  align-items: center;
+  padding: 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+#tabList li:last-child {
+  border-bottom: none;
+}
+
+#tabList img {
+  width: 16px;
+  height: 16px;
+  margin-right: 10px;
+}
+
+#tabList a {
+  flex-grow: 1;
+  color: var(--text-color);
+  text-decoration: none;
+  font-size: 14px;
+}
+
+#tabList a:hover {
+  text-decoration: underline;
+}
+
+#tabList span {
+  font-size: 12px;
+  color: #7f8c8d;
+  margin-right: 10px;
+}
+
+.deleteButton {
+  background-color: #e74c3c;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.deleteButton:hover {
+  background-color: #c0392b;
+}
+
