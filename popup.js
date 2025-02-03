@@ -1,5 +1,6 @@
 document.addEventListener("DOMContentLoaded", () => {
   const saveTabButton = document.getElementById("saveTab");
+  const saveAllTabsButton = document.getElementById("saveAllTabs");
   const openAllButton = document.getElementById("openAll");
   const addCategoryButton = document.getElementById("addCategory");
   const searchInput = document.getElementById("search");
@@ -8,6 +9,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const noTabsMessage = document.getElementById("noTabsMessage");
 
   saveTabButton.addEventListener("click", saveCurrentTab);
+  saveAllTabsButton.addEventListener("click", saveAllTabs);
   openAllButton.addEventListener("click", openAllTabs);
   addCategoryButton.addEventListener("click", addCategory);
   searchInput.addEventListener("input", searchTabs);
@@ -53,32 +55,84 @@ document.addEventListener("DOMContentLoaded", () => {
   function saveCurrentTab() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs[0];
+      saveTab(tab);
+    });
+  }
+
+  async function saveAllTabs() {
+    try {
+      const windows = await chrome.windows.getAll({ populate: true });
+      const allTabs = windows.flatMap((window) => window.tabs);
+
+      // Get current saved tabs
+      const { savedTabs: existingSavedTabs = [] } =
+        await chrome.storage.local.get({ savedTabs: [] });
       const category = categorySelect.value;
-      const tabData = {
+
+      // Prepare all new tab data
+      const newTabsData = allTabs.map((tab) => ({
         url: tab.url,
         title: tab.title,
         favicon: tab.favIconUrl,
         date: new Date().toISOString(),
         category: category,
-      };
+      }));
 
-      chrome.storage.local.get({ savedTabs: [] }, (result) => {
-        const savedTabs = result.savedTabs;
-        const existingTabIndex = savedTabs.findIndex(
-          (savedTab) => savedTab.url === tabData.url
+      // Create a Map of existing tabs by URL for quick lookup
+      const existingTabsMap = new Map(
+        existingSavedTabs.map((tab) => [tab.url, tab])
+      );
+
+      // Merge new tabs with existing ones, replacing duplicates
+      const mergedTabs = [...existingSavedTabs];
+
+      newTabsData.forEach((newTab) => {
+        const existingIndex = mergedTabs.findIndex(
+          (tab) => tab.url === newTab.url
         );
-
-        if (existingTabIndex !== -1) {
-          // Replace the existing tab data
-          savedTabs[existingTabIndex] = tabData;
+        if (existingIndex !== -1) {
+          mergedTabs[existingIndex] = newTab;
         } else {
-          // Add new tab data
-          savedTabs.push(tabData);
+          mergedTabs.push(newTab);
         }
+      });
 
-        chrome.storage.local.set({ savedTabs }, () => {
+      // Save all tabs at once
+      await chrome.storage.local.set({ savedTabs: mergedTabs });
+      displaySavedTabs(mergedTabs);
+    } catch (error) {
+      console.error("Error saving all tabs:", error);
+    }
+  }
+
+  function saveTab(tab, callback) {
+    const category = categorySelect.value;
+    const tabData = {
+      url: tab.url,
+      title: tab.title,
+      favicon: tab.favIconUrl,
+      date: new Date().toISOString(),
+      category: category,
+    };
+
+    chrome.storage.local.get({ savedTabs: [] }, (result) => {
+      const savedTabs = result.savedTabs;
+      const existingTabIndex = savedTabs.findIndex(
+        (savedTab) => savedTab.url === tabData.url
+      );
+
+      if (existingTabIndex !== -1) {
+        savedTabs[existingTabIndex] = tabData;
+      } else {
+        savedTabs.push(tabData);
+      }
+
+      chrome.storage.local.set({ savedTabs }, () => {
+        if (callback) {
+          callback();
+        } else {
           displaySavedTabs(savedTabs);
-        });
+        }
       });
     });
   }
