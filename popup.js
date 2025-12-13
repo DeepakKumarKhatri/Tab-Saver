@@ -2,52 +2,99 @@ document.addEventListener("DOMContentLoaded", () => {
   const saveTabButton = document.getElementById("saveTab");
   const saveAllTabsButton = document.getElementById("saveAllTabs");
   const openAllButton = document.getElementById("openAll");
-  const addCategoryButton = document.getElementById("addCategory");
+  const settingsButton = document.getElementById("settingsButton");
   const searchInput = document.getElementById("search");
   const categorySelect = document.getElementById("category");
-  const newCategoryInput = document.getElementById("newCategory");
+  const saveCategorySelect = document.getElementById("saveCategory");
+  const sortBySelect = document.getElementById("sortBy");
   const noTabsMessage = document.getElementById("noTabsMessage");
 
   saveTabButton.addEventListener("click", saveCurrentTab);
   saveAllTabsButton.addEventListener("click", saveAllTabs);
   openAllButton.addEventListener("click", openAllTabs);
-  addCategoryButton.addEventListener("click", addCategory);
+  settingsButton.addEventListener("click", openSettings);
   searchInput.addEventListener("input", searchTabs);
+  sortBySelect.addEventListener("change", filterByCategory);
 
   let categories = ["All"];
+  let allSavedTabs = []; // Store all tabs for filtering
+  let collapsedCategories = new Set(); // Track which categories are collapsed
+  let selectedTabs = new Set(); // Track selected tabs by URL
 
   // Load categories and display saved tabs when the popup is opened
   chrome.storage.local.get({ categories: ["All"], savedTabs: [] }, (result) => {
     categories = result.categories;
+    allSavedTabs = result.savedTabs;
     updateCategoryDropdown();
+    categorySelect.value = "All"; // Set default to All
     displaySavedTabs(result.savedTabs);
   });
 
-  function searchTabs() {
+  // Add category filter listener
+  categorySelect.addEventListener("change", filterByCategory);
+
+  function filterByCategory() {
+    const selectedCategory = categorySelect.value;
     const query = searchInput.value.toLowerCase();
-    chrome.storage.local.get({ savedTabs: [] }, (result) => {
-      const filteredTabs = result.savedTabs.filter(
+    const sortBy = sortBySelect.value;
+    
+    let filteredTabs = allSavedTabs;
+    
+    // Filter by category
+    if (selectedCategory !== "All") {
+      filteredTabs = filteredTabs.filter(tab => tab.category === selectedCategory);
+    }
+    
+    // Filter by search query
+    if (query) {
+      filteredTabs = filteredTabs.filter(
         (tab) =>
           tab.title.toLowerCase().includes(query) ||
           tab.url.toLowerCase().includes(query)
       );
-      displaySavedTabs(filteredTabs);
-    });
+    }
+    
+    // Apply sorting
+    filteredTabs = sortTabs(filteredTabs, sortBy);
+    
+    displaySavedTabs(filteredTabs);
   }
 
-  function addCategory() {
-    const newCategory = newCategoryInput.value.trim();
-    if (newCategory && !categories.includes(newCategory)) {
-      categories.push(newCategory);
-      chrome.storage.local.set({ categories }, () => {
-        updateCategoryDropdown();
-        newCategoryInput.value = "";
-      });
+  function sortTabs(tabs, sortBy) {
+    const sorted = [...tabs]; // Create a copy to avoid mutating original
+    
+    switch (sortBy) {
+      case 'date-desc': // Newest first
+        sorted.sort((a, b) => new Date(b.date) - new Date(a.date));
+        break;
+      case 'date-asc': // Oldest first
+        sorted.sort((a, b) => new Date(a.date) - new Date(b.date));
+        break;
+      case 'title-asc': // A-Z
+        sorted.sort((a, b) => a.title.localeCompare(b.title));
+        break;
+      case 'title-desc': // Z-A
+        sorted.sort((a, b) => b.title.localeCompare(a.title));
+        break;
+      default:
+        sorted.sort((a, b) => new Date(b.date) - new Date(a.date));
     }
+    
+    return sorted;
   }
 
   function updateCategoryDropdown() {
+    // Update filter dropdown (includes "All")
     categorySelect.innerHTML = categories
+      .map((cat) => `<option value="${cat}">${cat}</option>`)
+      .join("");
+    
+    // Update save category dropdown (excludes "All" or shows it last)
+    const saveCategories = categories.filter(cat => cat !== "All");
+    if (saveCategories.length === 0) {
+      saveCategories.push("All");
+    }
+    saveCategorySelect.innerHTML = saveCategories
       .map((cat) => `<option value="${cat}">${cat}</option>`)
       .join("");
   }
@@ -59,6 +106,14 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  function searchTabs() {
+    filterByCategory();
+  }
+
+  function openSettings() {
+    window.location.href = "settings.html";
+  }
+
   async function saveAllTabs() {
     try {
       const windows = await chrome.windows.getAll({ populate: true });
@@ -67,7 +122,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // Get current saved tabs
       const { savedTabs: existingSavedTabs = [] } =
         await chrome.storage.local.get({ savedTabs: [] });
-      const category = categorySelect.value;
+      const category = saveCategorySelect.value;
 
       // Prepare all new tab data
       const newTabsData = allTabs.map((tab) => ({
@@ -99,14 +154,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Save all tabs at once
       await chrome.storage.local.set({ savedTabs: mergedTabs });
-      displaySavedTabs(mergedTabs);
+      allSavedTabs = mergedTabs;
+      filterByCategory();
     } catch (error) {
       console.error("Error saving all tabs:", error);
     }
   }
 
   function saveTab(tab, callback) {
-    const category = categorySelect.value;
+    // Get the category from the save category selector
+    const category = saveCategorySelect.value;
+    
     const tabData = {
       url: tab.url,
       title: tab.title,
@@ -128,10 +186,11 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       chrome.storage.local.set({ savedTabs }, () => {
+        allSavedTabs = savedTabs;
         if (callback) {
           callback();
         } else {
-          displaySavedTabs(savedTabs);
+          filterByCategory();
         }
       });
     });
@@ -139,6 +198,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function displaySavedTabs(tabs) {
     const tabList = document.getElementById("tabList");
+    const selectedCategory = categorySelect.value;
     tabList.innerHTML = "";
 
     if (tabs.length === 0) {
@@ -146,9 +206,92 @@ document.addEventListener("DOMContentLoaded", () => {
     } else {
       noTabsMessage.classList.add("hidden");
 
-      tabs.forEach((tab, index) => {
+      // If "All" is selected, group by category
+      if (selectedCategory === "All") {
+        displayGroupedTabs(tabs);
+      } else {
+        displayFlatTabs(tabs);
+      }
+    }
+  }
+
+  function displayGroupedTabs(tabs) {
+    const tabList = document.getElementById("tabList");
+    
+    // Reload categories to ensure we have the latest
+    chrome.storage.local.get({ categories: ["All"] }, (result) => {
+      const latestCategories = result.categories || ["All"];
+      categories = latestCategories;
+      console.log("Categories loaded for grouped view:", latestCategories); // Debug log
+      renderGroupedTabs(tabs, tabList, latestCategories);
+    });
+  }
+
+  function renderGroupedTabs(tabs, tabList, availableCategories) {
+    // Group tabs by category
+    const groupedTabs = {};
+    tabs.forEach(tab => {
+      const category = tab.category || "All";
+      if (!groupedTabs[category]) {
+        groupedTabs[category] = [];
+      }
+      groupedTabs[category].push(tab);
+    });
+
+    // Count selected tabs per category
+    const selectedCount = {};
+    Object.keys(groupedTabs).forEach(category => {
+      selectedCount[category] = groupedTabs[category].filter(tab => selectedTabs.has(tab.url)).length;
+    });
+
+    // Display each category group
+    Object.keys(groupedTabs).sort().forEach(category => {
+      const categoryTabs = groupedTabs[category];
+      const isCollapsed = collapsedCategories.has(category);
+      const categorySelectedCount = selectedCount[category];
+      const allSelected = categorySelectedCount === categoryTabs.length;
+      const someSelected = categorySelectedCount > 0 && !allSelected;
+      
+      // Create category header
+      const categoryHeader = document.createElement("div");
+      categoryHeader.className = "category-header";
+      categoryHeader.innerHTML = `
+        <div class="category-header-left">
+          <button class="collapse-btn" data-category="${category}" title="${isCollapsed ? 'Expand' : 'Collapse'}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="collapse-icon ${isCollapsed ? 'collapsed' : ''}">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+          <input type="checkbox" class="select-all-checkbox" data-category="${category}" ${allSelected ? 'checked' : ''} ${someSelected ? 'data-indeterminate="true"' : ''} title="Select all in category">
+          <h3>${category} <span class="tab-count">(${categoryTabs.length})</span></h3>
+        </div>
+        <div class="category-header-actions">
+          ${categorySelectedCount > 0 ? `<button class="open-selected-category-btn" data-category="${category}" title="Open ${categorySelectedCount} selected tabs">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/>
+            </svg>
+            Open Selected (${categorySelectedCount})
+          </button>` : ''}
+          <button class="open-category-btn" data-category="${category}" title="Open all tabs in category">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/>
+            </svg>
+            Open All
+          </button>
+        </div>
+      `;
+      tabList.appendChild(categoryHeader);
+
+      // Create tabs list for this category
+      const categoryList = document.createElement("ul");
+      categoryList.className = `category-tabs-list ${isCollapsed ? 'collapsed' : ''}`;
+      categoryList.dataset.category = category;
+      
+      categoryTabs.forEach(tab => {
+        const isSelected = selectedTabs.has(tab.url);
         const li = document.createElement("li");
         li.innerHTML = `
+          <input type="checkbox" class="tab-checkbox" data-url="${tab.url}" ${isSelected ? 'checked' : ''} title="Select tab">
           <img src="${
             tab.favicon || "icons/default-favicon.png"
           }" alt="Favicon">
@@ -157,19 +300,164 @@ document.addEventListener("DOMContentLoaded", () => {
           tab.title
         }</a>
             <div class="metadata">
-              <span>${tab.category}</span> • 
               <span>${formatDate(tab.date)}</span>
             </div>
           </div>
-          <button class="deleteButton" data-index="${index}">Delete</button>
+          <select class="change-category-select" data-url="${tab.url}" title="Change category">
+            ${availableCategories.map(cat => 
+              `<option value="${cat}" ${cat === tab.category ? 'selected' : ''}>${cat}</option>`
+            ).join('')}
+          </select>
+          <button class="deleteButton" data-url="${tab.url}" title="Delete tab">Delete</button>
         `;
-        tabList.appendChild(li);
+        categoryList.appendChild(li);
       });
+      
+      tabList.appendChild(categoryList);
+    });
 
-      document.querySelectorAll(".deleteButton").forEach((button) => {
-        button.addEventListener("click", deleteTab);
-      });
+    // Set indeterminate state for checkboxes after DOM is ready
+    document.querySelectorAll('.select-all-checkbox[data-indeterminate="true"]').forEach(checkbox => {
+      checkbox.indeterminate = true;
+    });
+
+    // Add event listeners
+    document.querySelectorAll(".deleteButton").forEach((button) => {
+      button.addEventListener("click", deleteTab);
+    });
+    
+    document.querySelectorAll(".open-category-btn").forEach((button) => {
+      button.addEventListener("click", openCategoryTabs);
+    });
+
+    document.querySelectorAll(".open-selected-category-btn").forEach((button) => {
+      button.addEventListener("click", openSelectedCategoryTabs);
+    });
+
+    document.querySelectorAll(".collapse-btn").forEach((button) => {
+      button.addEventListener("click", toggleCategoryCollapse);
+    });
+
+    document.querySelectorAll(".tab-checkbox").forEach((checkbox) => {
+      checkbox.addEventListener("change", handleTabCheckbox);
+    });
+
+    document.querySelectorAll(".select-all-checkbox").forEach((checkbox) => {
+      checkbox.addEventListener("change", handleSelectAllCheckbox);
+    });
+
+    document.querySelectorAll(".change-category-select").forEach((select) => {
+      select.addEventListener("change", handleCategoryChange);
+    });
+  }
+
+  function displayFlatTabs(tabs) {
+    const tabList = document.getElementById("tabList");
+    
+    // Reload categories to ensure we have the latest
+    chrome.storage.local.get({ categories: ["All"] }, (result) => {
+      const latestCategories = result.categories || ["All"];
+      categories = latestCategories;
+      console.log("Categories loaded for flat view:", latestCategories); // Debug log
+      renderFlatTabs(tabs, tabList, latestCategories);
+    });
+  }
+
+  function renderFlatTabs(tabs, tabList, availableCategories) {
+    // Count selected tabs
+    const selectedCount = tabs.filter(tab => selectedTabs.has(tab.url)).length;
+    const allSelected = selectedCount === tabs.length && tabs.length > 0;
+    const someSelected = selectedCount > 0 && !allSelected;
+    
+    // Add header with select all and open selected
+    if (tabs.length > 0) {
+      const header = document.createElement("div");
+      header.className = "category-header";
+      header.innerHTML = `
+        <div class="category-header-left">
+          <input type="checkbox" class="select-all-checkbox-flat" ${allSelected ? 'checked' : ''} ${someSelected ? 'data-indeterminate="true"' : ''} title="Select all tabs">
+          <h3>Tabs <span class="tab-count">(${tabs.length})</span></h3>
+        </div>
+        <div class="category-header-actions">
+          ${selectedCount > 0 ? `<button class="open-selected-flat-btn" title="Open ${selectedCount} selected tabs">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/>
+            </svg>
+            Open Selected (${selectedCount})
+          </button>` : ''}
+        </div>
+      `;
+      tabList.appendChild(header);
+      
+      // Set indeterminate state
+      if (someSelected) {
+        const checkbox = header.querySelector('.select-all-checkbox-flat');
+        checkbox.indeterminate = true;
+      }
     }
+    
+    const flatList = document.createElement("ul");
+    flatList.className = "category-tabs-list";
+
+    tabs.forEach(tab => {
+      const isSelected = selectedTabs.has(tab.url);
+      const li = document.createElement("li");
+      li.innerHTML = `
+        <input type="checkbox" class="tab-checkbox" data-url="${tab.url}" ${isSelected ? 'checked' : ''} title="Select tab">
+        <img src="${
+          tab.favicon || "icons/default-favicon.png"
+        }" alt="Favicon">
+        <div class="tab-info">
+          <a href="${tab.url}" target="_blank" title="${tab.title}">${
+        tab.title
+      }</a>
+          <div class="metadata">
+            <span>${tab.category}</span> • 
+            <span>${formatDate(tab.date)}</span>
+          </div>
+        </div>
+        <select class="change-category-select" data-url="${tab.url}" title="Change category">
+          ${availableCategories.map(cat => 
+            `<option value="${cat}" ${cat === tab.category ? 'selected' : ''}>${cat}</option>`
+          ).join('')}
+        </select>
+        <button class="deleteButton" data-url="${tab.url}" title="Delete tab">Delete</button>
+      `;
+      flatList.appendChild(li);
+    });
+    
+    tabList.appendChild(flatList);
+
+    document.querySelectorAll(".deleteButton").forEach((button) => {
+      button.addEventListener("click", deleteTab);
+    });
+    
+    document.querySelectorAll(".tab-checkbox").forEach((checkbox) => {
+      checkbox.addEventListener("change", handleTabCheckbox);
+    });
+    
+    document.querySelectorAll(".change-category-select").forEach((select) => {
+      select.addEventListener("change", handleCategoryChange);
+    });
+    
+    const selectAllCheckbox = document.querySelector(".select-all-checkbox-flat");
+    if (selectAllCheckbox) {
+      selectAllCheckbox.addEventListener("change", handleSelectAllFlat);
+    }
+    
+    const openSelectedBtn = document.querySelector(".open-selected-flat-btn");
+    if (openSelectedBtn) {
+      openSelectedBtn.addEventListener("click", openSelectedTabs);
+    }
+  }
+
+  function openCategoryTabs(event) {
+    const category = event.currentTarget.getAttribute("data-category");
+    const categoryTabs = allSavedTabs.filter(tab => tab.category === category);
+    
+    categoryTabs.forEach((tab) => {
+      chrome.tabs.create({ url: tab.url });
+    });
   }
 
   function formatDate(dateString) {
@@ -197,13 +485,228 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function deleteTab(event) {
-    const index = event.target.getAttribute("data-index");
+    const tabUrl = event.target.getAttribute("data-url");
+    
     chrome.storage.local.get({ savedTabs: [] }, (result) => {
       const savedTabs = result.savedTabs;
-      savedTabs.splice(index, 1);
-      chrome.storage.local.set({ savedTabs }, () => {
-        displaySavedTabs(savedTabs);
-      });
+      const actualIndex = savedTabs.findIndex(tab => tab.url === tabUrl);
+      
+      if (actualIndex !== -1) {
+        savedTabs.splice(actualIndex, 1);
+        chrome.storage.local.set({ savedTabs }, () => {
+          allSavedTabs = savedTabs;
+          selectedTabs.delete(tabUrl); // Remove from selected if deleted
+          filterByCategory();
+        });
+      }
     });
+  }
+
+  // Toggle category collapse/expand
+  function toggleCategoryCollapse(event) {
+    const category = event.currentTarget.getAttribute("data-category");
+    
+    if (collapsedCategories.has(category)) {
+      collapsedCategories.delete(category);
+    } else {
+      collapsedCategories.add(category);
+    }
+    
+    filterByCategory(); // Re-render to show collapsed state
+  }
+
+  // Handle individual tab checkbox
+  function handleTabCheckbox(event) {
+    const url = event.target.getAttribute("data-url");
+    
+    if (event.target.checked) {
+      selectedTabs.add(url);
+    } else {
+      selectedTabs.delete(url);
+    }
+    
+    updateSelectionUI(); // Update UI without full re-render
+  }
+
+  // Handle select all checkbox for a category
+  function handleSelectAllCheckbox(event) {
+    const category = event.currentTarget.getAttribute("data-category");
+    const categoryTabs = allSavedTabs.filter(tab => tab.category === category);
+    
+    if (event.target.checked) {
+      categoryTabs.forEach(tab => selectedTabs.add(tab.url));
+    } else {
+      categoryTabs.forEach(tab => selectedTabs.delete(tab.url));
+    }
+    
+    updateSelectionUI(); // Update UI without full re-render
+  }
+
+  // Handle select all checkbox for flat view
+  function handleSelectAllFlat(event) {
+    const selectedCategory = categorySelect.value;
+    let tabs = allSavedTabs;
+    
+    if (selectedCategory !== "All") {
+      tabs = allSavedTabs.filter(tab => tab.category === selectedCategory);
+    }
+    
+    // Apply search filter if active
+    const query = searchInput.value.toLowerCase();
+    if (query) {
+      tabs = tabs.filter(
+        (tab) =>
+          tab.title.toLowerCase().includes(query) ||
+          tab.url.toLowerCase().includes(query)
+      );
+    }
+    
+    if (event.target.checked) {
+      tabs.forEach(tab => selectedTabs.add(tab.url));
+    } else {
+      tabs.forEach(tab => selectedTabs.delete(tab.url));
+    }
+    
+    updateSelectionUI(); // Update UI without full re-render
+  }
+
+  // Open selected tabs in a specific category
+  function openSelectedCategoryTabs(event) {
+    const category = event.currentTarget.getAttribute("data-category");
+    const categoryTabs = allSavedTabs.filter(tab => 
+      tab.category === category && selectedTabs.has(tab.url)
+    );
+    
+    categoryTabs.forEach((tab) => {
+      chrome.tabs.create({ url: tab.url });
+    });
+  }
+
+  // Open selected tabs (flat view)
+  function openSelectedTabs() {
+    const tabsToOpen = allSavedTabs.filter(tab => selectedTabs.has(tab.url));
+    
+    tabsToOpen.forEach((tab) => {
+      chrome.tabs.create({ url: tab.url });
+    });
+  }
+
+  // Handle category change for a tab
+  function handleCategoryChange(event) {
+    const url = event.target.getAttribute("data-url");
+    const newCategory = event.target.value;
+    
+    chrome.storage.local.get({ savedTabs: [] }, (result) => {
+      const savedTabs = result.savedTabs;
+      const tabIndex = savedTabs.findIndex(tab => tab.url === url);
+      
+      if (tabIndex !== -1) {
+        savedTabs[tabIndex].category = newCategory;
+        chrome.storage.local.set({ savedTabs }, () => {
+          allSavedTabs = savedTabs;
+          filterByCategory(); // Re-render to show in new category
+        });
+      }
+    });
+  }
+
+  // Update selection UI without full re-render
+  function updateSelectionUI() {
+    // Update all individual checkboxes state
+    document.querySelectorAll('.tab-checkbox').forEach(checkbox => {
+      const url = checkbox.getAttribute('data-url');
+      checkbox.checked = selectedTabs.has(url);
+    });
+
+    // Update select-all checkboxes for each category
+    const selectedCategory = categorySelect.value;
+    
+    if (selectedCategory === "All") {
+      // Grouped view - update each category's select-all checkbox
+      document.querySelectorAll('.select-all-checkbox').forEach(checkbox => {
+        const category = checkbox.getAttribute('data-category');
+        const categoryTabs = allSavedTabs.filter(tab => tab.category === category);
+        const selectedCount = categoryTabs.filter(tab => selectedTabs.has(tab.url)).length;
+        
+        checkbox.checked = selectedCount === categoryTabs.length && categoryTabs.length > 0;
+        checkbox.indeterminate = selectedCount > 0 && selectedCount < categoryTabs.length;
+        
+        // Update "Open Selected" button visibility and count
+        const header = checkbox.closest('.category-header');
+        if (header) {
+          const actionsDiv = header.querySelector('.category-header-actions');
+          let openSelectedBtn = actionsDiv.querySelector('.open-selected-category-btn');
+          
+          if (selectedCount > 0) {
+            if (!openSelectedBtn) {
+              // Create button if it doesn't exist
+              openSelectedBtn = document.createElement('button');
+              openSelectedBtn.className = 'open-selected-category-btn';
+              openSelectedBtn.setAttribute('data-category', category);
+              openSelectedBtn.title = `Open ${selectedCount} selected tabs`;
+              openSelectedBtn.addEventListener('click', openSelectedCategoryTabs);
+              actionsDiv.insertBefore(openSelectedBtn, actionsDiv.firstChild);
+            }
+            openSelectedBtn.innerHTML = `
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/>
+              </svg>
+              Open Selected (${selectedCount})
+            `;
+            openSelectedBtn.title = `Open ${selectedCount} selected tabs`;
+          } else if (openSelectedBtn) {
+            // Remove button if no selections
+            openSelectedBtn.remove();
+          }
+        }
+      });
+    } else {
+      // Flat view - update single select-all checkbox
+      const selectAllCheckbox = document.querySelector('.select-all-checkbox-flat');
+      if (selectAllCheckbox) {
+        let tabs = allSavedTabs;
+        if (selectedCategory !== "All") {
+          tabs = allSavedTabs.filter(tab => tab.category === selectedCategory);
+        }
+        
+        const query = searchInput.value.toLowerCase();
+        if (query) {
+          tabs = tabs.filter(tab =>
+            tab.title.toLowerCase().includes(query) ||
+            tab.url.toLowerCase().includes(query)
+          );
+        }
+        
+        const selectedCount = tabs.filter(tab => selectedTabs.has(tab.url)).length;
+        selectAllCheckbox.checked = selectedCount === tabs.length && tabs.length > 0;
+        selectAllCheckbox.indeterminate = selectedCount > 0 && selectedCount < tabs.length;
+        
+        // Update "Open Selected" button
+        const header = selectAllCheckbox.closest('.category-header');
+        if (header) {
+          const actionsDiv = header.querySelector('.category-header-actions');
+          let openSelectedBtn = actionsDiv.querySelector('.open-selected-flat-btn');
+          
+          if (selectedCount > 0) {
+            if (!openSelectedBtn) {
+              openSelectedBtn = document.createElement('button');
+              openSelectedBtn.className = 'open-selected-flat-btn';
+              openSelectedBtn.title = `Open ${selectedCount} selected tabs`;
+              openSelectedBtn.addEventListener('click', openSelectedTabs);
+              actionsDiv.appendChild(openSelectedBtn);
+            }
+            openSelectedBtn.innerHTML = `
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/>
+              </svg>
+              Open Selected (${selectedCount})
+            `;
+            openSelectedBtn.title = `Open ${selectedCount} selected tabs`;
+          } else if (openSelectedBtn) {
+            openSelectedBtn.remove();
+          }
+        }
+      }
+    }
   }
 });

@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "Tab Saver",
-    "version": "1.0",
+    "version": "2.0.0",
     "description": "Save and manage your tabs for later.",
     "permissions": ["tabs", "storage"],
     "action": {
