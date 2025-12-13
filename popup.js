@@ -7,6 +7,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const categorySelect = document.getElementById("category");
   const saveCategorySelect = document.getElementById("saveCategory");
   const sortBySelect = document.getElementById("sortBy");
+  const collapseAllBtn = document.getElementById("collapseAllBtn");
   const noTabsMessage = document.getElementById("noTabsMessage");
 
   saveTabButton.addEventListener("click", saveCurrentTab);
@@ -15,6 +16,7 @@ document.addEventListener("DOMContentLoaded", () => {
   settingsButton.addEventListener("click", openSettings);
   searchInput.addEventListener("input", searchTabs);
   sortBySelect.addEventListener("change", filterByCategory);
+  collapseAllBtn.addEventListener("click", toggleCollapseAll);
 
   let categories = ["All"];
   let allSavedTabs = []; // Store all tabs for filtering
@@ -22,12 +24,14 @@ document.addEventListener("DOMContentLoaded", () => {
   let selectedTabs = new Set(); // Track selected tabs by URL
 
   // Load categories and display saved tabs when the popup is opened
-  chrome.storage.local.get({ categories: ["All"], savedTabs: [] }, (result) => {
+  chrome.storage.local.get({ categories: ["All"], savedTabs: [], collapsedCategories: [] }, (result) => {
     categories = result.categories;
     allSavedTabs = result.savedTabs;
+    collapsedCategories = new Set(result.collapsedCategories || []);
     updateCategoryDropdown();
     categorySelect.value = "All"; // Set default to All
     displaySavedTabs(result.savedTabs);
+    updateCollapseAllButton();
   });
 
   // Add category filter listener
@@ -58,6 +62,9 @@ document.addEventListener("DOMContentLoaded", () => {
     filteredTabs = sortTabs(filteredTabs, sortBy);
     
     displaySavedTabs(filteredTabs);
+    
+    // Update collapse all button after display
+    updateCollapseAllButton();
   }
 
   function sortTabs(tabs, sortBy) {
@@ -455,8 +462,25 @@ document.addEventListener("DOMContentLoaded", () => {
     const category = event.currentTarget.getAttribute("data-category");
     const categoryTabs = allSavedTabs.filter(tab => tab.category === category);
     
-    categoryTabs.forEach((tab) => {
-      chrome.tabs.create({ url: tab.url });
+    if (categoryTabs.length === 0) return;
+    
+    // Open all tabs and collect their IDs
+    const tabPromises = categoryTabs.map(tab => 
+      chrome.tabs.create({ url: tab.url, active: false })
+    );
+    
+    Promise.all(tabPromises).then(createdTabs => {
+      const tabIds = createdTabs.map(tab => tab.id);
+      
+      // Create tab group
+      chrome.tabs.group({ tabIds }, (groupId) => {
+        // Set group title and color
+        chrome.tabGroups.update(groupId, {
+          title: category,
+          color: getGroupColor(category),
+          collapsed: false
+        });
+      });
     });
   }
 
@@ -512,7 +536,116 @@ document.addEventListener("DOMContentLoaded", () => {
       collapsedCategories.add(category);
     }
     
-    filterByCategory(); // Re-render to show collapsed state
+    // Save collapsed state to storage
+    chrome.storage.local.set({ collapsedCategories: Array.from(collapsedCategories) });
+    
+    // Toggle the UI without full re-render
+    const categoryList = document.querySelector(`.category-tabs-list[data-category="${category}"]`);
+    const collapseIcon = event.currentTarget.querySelector('.collapse-icon');
+    
+    if (categoryList) {
+      categoryList.classList.toggle('collapsed');
+    }
+    
+    if (collapseIcon) {
+      collapseIcon.classList.toggle('collapsed');
+    }
+    
+    // Update collapse all button state
+    updateCollapseAllButton();
+  }
+
+  // Toggle collapse all categories
+  function toggleCollapseAll() {
+    const selectedCategory = categorySelect.value;
+    
+    // Only works in grouped view (when "All" is selected)
+    if (selectedCategory !== "All") return;
+    
+    // Get all categories currently displayed
+    const displayedCategories = [];
+    document.querySelectorAll('.category-tabs-list[data-category]').forEach(list => {
+      displayedCategories.push(list.dataset.category);
+    });
+    
+    if (displayedCategories.length === 0) return;
+    
+    // Check if all are collapsed
+    const allCollapsed = displayedCategories.every(cat => collapsedCategories.has(cat));
+    
+    if (allCollapsed) {
+      // Expand all
+      displayedCategories.forEach(cat => collapsedCategories.delete(cat));
+    } else {
+      // Collapse all
+      displayedCategories.forEach(cat => collapsedCategories.add(cat));
+    }
+    
+    // Save state
+    chrome.storage.local.set({ collapsedCategories: Array.from(collapsedCategories) });
+    
+    // Update UI without re-render
+    document.querySelectorAll('.category-tabs-list').forEach(list => {
+      const category = list.dataset.category;
+      if (category) {
+        if (collapsedCategories.has(category)) {
+          list.classList.add('collapsed');
+        } else {
+          list.classList.remove('collapsed');
+        }
+      }
+    });
+    
+    // Update collapse icons
+    document.querySelectorAll('.collapse-btn').forEach(btn => {
+      const category = btn.getAttribute('data-category');
+      const icon = btn.querySelector('.collapse-icon');
+      if (icon && category) {
+        if (collapsedCategories.has(category)) {
+          icon.classList.add('collapsed');
+        } else {
+          icon.classList.remove('collapsed');
+        }
+      }
+    });
+    
+    updateCollapseAllButton();
+  }
+
+  // Update collapse all button text and icon
+  function updateCollapseAllButton() {
+    const selectedCategory = categorySelect.value;
+    const collapseAllText = document.getElementById('collapseAllText');
+    
+    // Hide button in flat view
+    if (selectedCategory !== "All") {
+      collapseAllBtn.style.display = 'none';
+      return;
+    }
+    
+    collapseAllBtn.style.display = 'flex';
+    
+    // Get all displayed categories
+    const displayedCategories = [];
+    document.querySelectorAll('.category-tabs-list[data-category]').forEach(list => {
+      displayedCategories.push(list.dataset.category);
+    });
+    
+    if (displayedCategories.length === 0) {
+      collapseAllBtn.style.display = 'none';
+      return;
+    }
+    
+    // Check if all are collapsed
+    const allCollapsed = displayedCategories.every(cat => collapsedCategories.has(cat));
+    
+    if (allCollapsed) {
+      collapseAllText.textContent = 'Expand All';
+      collapseAllBtn.classList.add('all-collapsed');
+    } else {
+      collapseAllText.textContent = 'Collapse All';
+      collapseAllBtn.classList.remove('all-collapsed');
+    }
   }
 
   // Handle individual tab checkbox
@@ -577,8 +710,24 @@ document.addEventListener("DOMContentLoaded", () => {
       tab.category === category && selectedTabs.has(tab.url)
     );
     
-    categoryTabs.forEach((tab) => {
-      chrome.tabs.create({ url: tab.url });
+    if (categoryTabs.length === 0) return;
+    
+    // Open all tabs and collect their IDs
+    const tabPromises = categoryTabs.map(tab => 
+      chrome.tabs.create({ url: tab.url, active: false })
+    );
+    
+    Promise.all(tabPromises).then(createdTabs => {
+      const tabIds = createdTabs.map(tab => tab.id);
+      
+      // Create tab group
+      chrome.tabs.group({ tabIds }, (groupId) => {
+        chrome.tabGroups.update(groupId, {
+          title: `${category} (Selected)`,
+          color: getGroupColor(category),
+          collapsed: false
+        });
+      });
     });
   }
 
@@ -586,8 +735,25 @@ document.addEventListener("DOMContentLoaded", () => {
   function openSelectedTabs() {
     const tabsToOpen = allSavedTabs.filter(tab => selectedTabs.has(tab.url));
     
-    tabsToOpen.forEach((tab) => {
-      chrome.tabs.create({ url: tab.url });
+    if (tabsToOpen.length === 0) return;
+    
+    // Open all tabs and collect their IDs
+    const tabPromises = tabsToOpen.map(tab => 
+      chrome.tabs.create({ url: tab.url, active: false })
+    );
+    
+    Promise.all(tabPromises).then(createdTabs => {
+      const tabIds = createdTabs.map(tab => tab.id);
+      
+      // Create tab group
+      chrome.tabs.group({ tabIds }, (groupId) => {
+        const now = new Date();
+        chrome.tabGroups.update(groupId, {
+          title: `Selected (${now.toLocaleTimeString()})`,
+          color: 'blue',
+          collapsed: false
+        });
+      });
     });
   }
 
@@ -608,6 +774,17 @@ document.addEventListener("DOMContentLoaded", () => {
         });
       }
     });
+  }
+
+  // Get color for tab group based on category name
+  function getGroupColor(category) {
+    const colors = ['blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'];
+    // Hash category name to get consistent color
+    let hash = 0;
+    for (let i = 0; i < category.length; i++) {
+      hash = category.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return colors[Math.abs(hash) % colors.length];
   }
 
   // Update selection UI without full re-render

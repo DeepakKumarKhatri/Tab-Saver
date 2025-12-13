@@ -10,6 +10,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const clearAllBtn = document.getElementById("clearAllBtn");
   const totalTabsEl = document.getElementById("totalTabs");
   const totalCategoriesEl = document.getElementById("totalCategories");
+  const autoSaveCheckbox = document.getElementById("autoSaveEnabled");
 
   let categories = ["All"];
   let savedTabs = [];
@@ -33,11 +34,14 @@ document.addEventListener("DOMContentLoaded", () => {
   importBtn.addEventListener("click", () => importFileInput.click());
   importFileInput.addEventListener("change", importData);
   clearAllBtn.addEventListener("click", clearAllData);
+  autoSaveCheckbox.addEventListener("change", saveAutoSaveSetting);
 
   // Load categories and tabs from storage
   function loadData() {
-    chrome.storage.local.get({ categories: ["All"], savedTabs: [] }, (result) => {
+    chrome.storage.local.get({ categories: ["All"], savedTabs: [], autoSaveEnabled: false }, (result) => {
       categories = result.categories;
+      savedTabs = result.savedTabs;
+      autoSaveCheckbox.checked = result.autoSaveEnabled;
       savedTabs = result.savedTabs;
       displayCategories();
       updateStatistics();
@@ -354,6 +358,19 @@ document.addEventListener("DOMContentLoaded", () => {
   function updateStatistics() {
     totalTabsEl.textContent = savedTabs.length;
     totalCategoriesEl.textContent = categories.length;
+  }
+
+  // Save auto-save setting
+  function saveAutoSaveSetting() {
+    const autoSaveEnabled = autoSaveCheckbox.checked;
+    chrome.storage.local.set({ autoSaveEnabled }, () => {
+      showMessage(
+        autoSaveEnabled 
+          ? "Auto-save enabled! You'll be prompted when closing the browser." 
+          : "Auto-save disabled.",
+        "success"
+      );
+    });
   }
 
   // Show message

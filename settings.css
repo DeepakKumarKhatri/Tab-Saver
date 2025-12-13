@@ -244,3 +244,63 @@ header {
 .btn-danger:hover {
   background-color: #c0392b;
 }
+
+/* Toggle Switch */
+.toggle-option {
+  margin-bottom: 15px;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-checkbox {
+  display: none;
+}
+
+.toggle-switch {
+  position: relative;
+  width: 50px;
+  height: 26px;
+  background-color: #ccc;
+  border-radius: 13px;
+  transition: background-color 0.3s;
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.toggle-switch::before {
+  content: '';
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background-color: white;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.3s;
+}
+
+.toggle-checkbox:checked + .toggle-switch {
+  background-color: var(--secondary-color);
+}
+
+.toggle-checkbox:checked + .toggle-switch::before {
+  transform: translateX(24px);
+}
+
+.toggle-text {
+  font-size: 14px;
+  color: var(--text-color);
+  font-weight: 500;
+}
+
+.toggle-description {
+  font-size: 12px;
+  color: #7f8c8d;
+  margin: 8px 0 0 62px;
+  line-height: 1.4;
+}

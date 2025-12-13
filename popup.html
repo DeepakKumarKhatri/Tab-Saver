@@ -45,7 +45,15 @@
           <select id="category"></select>
         </div>
         <div id="savedTabs">
-          <h2>Saved Tabs</h2>
+          <div class="saved-tabs-header">
+            <h2>Saved Tabs</h2>
+            <button id="collapseAllBtn" class="collapse-all-btn" title="Collapse all categories">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="18 15 12 9 6 15"></polyline>
+              </svg>
+              <span id="collapseAllText">Collapse All</span>
+            </button>
+          </div>
           <p id="noTabsMessage" class="hidden">No saved tabs</p>
           <ul id="tabList"></ul>
         </div>
