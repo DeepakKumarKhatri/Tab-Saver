@@ -20,7 +20,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Event Listeners
   backButton.addEventListener("click", () => {
-    window.location.href = "popup.html";
+    document.body.classList.add("page-exit");
+    setTimeout(() => (window.location.href = "popup.html"), 100);
   });
 
   addCategoryBtn.addEventListener("click", addCategory);

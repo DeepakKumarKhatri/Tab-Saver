@@ -21,7 +21,10 @@ document.addEventListener("DOMContentLoaded", () => {
   saveTabButton.addEventListener("click", saveCurrentTab);
   saveAllTabsButton.addEventListener("click", saveAllTabs);
   openAllButton.addEventListener("click", openAllTabs);
-  settingsButton.addEventListener("click", () => (window.location.href = "settings.html"));
+  settingsButton.addEventListener("click", () => {
+    document.body.classList.add("page-exit");
+    setTimeout(() => (window.location.href = "settings.html"), 100);
+  });
   searchInput.addEventListener("input", debounce(applyFilters, 150));
   sortBySelect.addEventListener("change", applyFilters);
   dateFilterSelect.addEventListener("change", applyFilters);
@@ -76,6 +79,7 @@ document.addEventListener("DOMContentLoaded", () => {
       updateDateFilterOptions();
       categorySelect.value = "All";
       updateSaveAllTooltip();
+      [sortBySelect, dateFilterSelect, saveCategorySelect, categorySelect].forEach(upgradeSelect);
       applyFilters();
     }
   );
@@ -136,6 +140,77 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     return colors[Math.abs(hash) % colors.length];
   }
+
+  // ===================== CUSTOM DROPDOWN =====================
+
+  function upgradeSelect(selectEl) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "custom-dropdown";
+    selectEl.parentNode.insertBefore(wrapper, selectEl);
+    wrapper.appendChild(selectEl);
+
+    const trigger = document.createElement("div");
+    trigger.className = "custom-dropdown-trigger";
+    wrapper.appendChild(trigger);
+
+    const panel = document.createElement("div");
+    panel.className = "custom-dropdown-options";
+    wrapper.appendChild(panel);
+
+    const proto = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
+    Object.defineProperty(selectEl, "value", {
+      get() { return proto.get.call(this); },
+      set(v) {
+        proto.set.call(this, v);
+        syncTrigger();
+      },
+    });
+
+    function syncTrigger() {
+      const opt = selectEl.options[selectEl.selectedIndex];
+      trigger.textContent = opt ? opt.textContent : "";
+    }
+
+    function buildOptions() {
+      panel.innerHTML = "";
+      const current = proto.get.call(selectEl);
+      for (const opt of selectEl.options) {
+        const div = document.createElement("div");
+        div.className = "custom-dropdown-option";
+        if (opt.value === current) div.classList.add("selected");
+        div.textContent = opt.textContent;
+        div.addEventListener("click", (e) => {
+          e.stopPropagation();
+          selectEl.value = opt.value;
+          selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+          wrapper.classList.remove("open", "open-up");
+        });
+        panel.appendChild(div);
+      }
+      syncTrigger();
+    }
+
+    trigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const wasOpen = wrapper.classList.contains("open");
+      document.querySelectorAll(".custom-dropdown.open").forEach((d) => d.classList.remove("open", "open-up"));
+      if (!wasOpen) {
+        buildOptions();
+        const rect = wrapper.getBoundingClientRect();
+        if (window.innerHeight - rect.bottom < 240) wrapper.classList.add("open-up");
+        wrapper.classList.add("open");
+        const sel = panel.querySelector(".selected");
+        if (sel) sel.scrollIntoView({ block: "nearest" });
+      }
+    });
+
+    new MutationObserver(syncTrigger).observe(selectEl, { childList: true, subtree: true });
+    syncTrigger();
+  }
+
+  document.addEventListener("click", () => {
+    document.querySelectorAll(".custom-dropdown.open").forEach((d) => d.classList.remove("open", "open-up"));
+  });
 
   // ===================== DROPDOWNS =====================
 
