@@ -2,7 +2,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- DOM Elements ---
   const saveTabButton = document.getElementById("saveTab");
   const saveAllTabsButton = document.getElementById("saveAllTabs");
-  const openAllButton = document.getElementById("openAll");
   const settingsButton = document.getElementById("settingsButton");
   const searchInput = document.getElementById("search");
   const categorySelect = document.getElementById("category");
@@ -20,7 +19,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- Event Listeners ---
   saveTabButton.addEventListener("click", saveCurrentTab);
   saveAllTabsButton.addEventListener("click", saveAllTabs);
-  openAllButton.addEventListener("click", openAllTabs);
   settingsButton.addEventListener("click", () => {
     document.body.classList.add("page-exit");
     setTimeout(() => (window.location.href = "settings.html"), 100);
@@ -705,13 +703,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ===================== OPEN TABS =====================
-
-  function openAllTabs() {
-    allSavedTabs.forEach((t) =>
-      chrome.tabs.create({ url: t.url, active: false })
-    );
-  }
-
   function openCategoryTabs(event) {
     const category = event.currentTarget.getAttribute("data-category");
     const tabs = allSavedTabs.filter((t) => t.category === category);
