@@ -219,3 +219,122 @@ async function refreshFromStorage() {
   applyState(await db.loadState());
   renderAll();
 }
+
+// ===========================================================================
+// Building the list
+// ===========================================================================
+
+const matches = (it, tokens) => tokens.every((t) => it._hay.includes(t));
+
+function score(it, tokens) {
+  let s = 0;
+  for (const t of tokens) {
+    const i = it._tl.indexOf(t);
+    if (i < 0) s += 1; // only the URL matched
+    else if (i === 0 || !/[\p{L}\p{N}]/u.test(it._tl[i - 1])) s += 4; // start of a word in the title
+    else s += 3;
+  }
+  return s;
+}
+
+function sorter(time) {
+  if (S.sort === "oldest") return (a, b) => time(a) - time(b);
+  if (S.sort === "title") return (a, b) => collator.compare(a.title, b.title) || time(b) - time(a);
+  return (a, b) => time(b) - time(a);
+}
+
+function computeRows() {
+  const { tokens, view } = S;
+  const searching = tokens.length > 0;
+  const inDone = view === "done";
+  const time = inDone ? (it) => it.doneAt : (it) => it.savedAt;
+
+  const items = [];
+  let doneMatches = 0;
+  for (const it of S.items) {
+    if (inDone) {
+      if (!it.doneAt) continue;
+    } else {
+      if (view !== "all" && it._gid !== view) continue;
+      if (view === "all" && isHidden(it._gid)) continue;
+      if (it.doneAt) {
+        if (searching && !isHidden(it._gid) && matches(it, tokens)) doneMatches++;
+        continue;
+      }
+    }
+    if (searching && !matches(it, tokens)) continue;
+    items.push(it);
+  }
+
+  const rows = [];
+  const heads = [];
+  const order = [];
+  const head = (key, label, extra) => {
+    const r = { t: "head", key: "h:" + key, label, count: 0, folded: false, ...extra };
+    heads.push(rows.length);
+    rows.push(r);
+    return r;
+  };
+  const push = (it) => {
+    order.push(it);
+    rows.push({ t: "item", it });
+  };
+  const base = sorter(time);
+  const mode = searching ? "none" : view === "all" ? S.groupByAll : S.groupByGroup;
+
+  if (searching) {
+    const scores = new Map(items.map((it) => [it, score(it, tokens)]));
+    items.sort((a, b) => scores.get(b) - scores.get(a) || time(b) - time(a));
+    items.forEach(push);
+  } else if (mode === "group") {
+    const rank = (it) => S.rank.get(it._gid) ?? 1e9;
+    items.sort((a, b) => rank(a) - rank(b) || base(a, b));
+    let cur = null;
+    for (const it of items) {
+      if (!cur || cur.gid !== it._gid) {
+        const g = S.groupById.get(it._gid);
+        cur = head("g:" + g.id, g.name, { gid: g.id, group: g, folded: !!g.collapsed });
+      }
+      cur.count++;
+      if (!cur.folded) push(it);
+    }
+  } else if (mode === "date") {
+    const today = startOfToday();
+    const oldestFirst = S.sort === "oldest";
+    items.sort((a, b) => (oldestFirst ? time(a) - time(b) : time(b) - time(a)));
+    let cur = null;
+    let bucket = [];
+    const flush = () => {
+      if (!cur) return;
+      if (S.sort === "title") bucket.sort(base);
+      cur.count = bucket.length;
+      if (!cur.folded) bucket.forEach(push);
+    };
+    for (const it of items) {
+      const k = dateBucketKey(time(it), today);
+      if (!cur || cur.bucket !== k) {
+        flush();
+        bucket = [];
+        cur = head("d:" + k, dateBucketLabel(k, time(it), today), { bucket: k, folded: S.folded.has("h:d:" + k) });
+      }
+      bucket.push(it);
+    }
+    flush();
+  } else if (mode === "site") {
+    const perSite = new Map();
+    for (const it of items) perSite.set(it._dom, (perSite.get(it._dom) || 0) + 1);
+    items.sort((a, b) => perSite.get(b._dom) - perSite.get(a._dom) || collator.compare(a._dom, b._dom) || base(a, b));
+    let cur = null;
+    for (const it of items) {
+      if (!cur || cur.dom !== it._dom) cur = head("s:" + it._dom, it._dom || "Other", { dom: it._dom, folded: S.folded.has("h:s:" + it._dom) });
+      cur.count++;
+      if (!cur.folded) push(it);
+    }
+  } else {
+    items.sort(base);
+    items.forEach(push);
+  }
+
+  if (searching && doneMatches && !inDone) rows.push({ t: "hint", key: "hint:done", n: doneMatches });
+  return { rows, heads, order, searching, doneMatches };
+}
