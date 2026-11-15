@@ -207,8 +207,9 @@ chrome.tabs.onCreated.addListener(scheduleSnapshot);
 chrome.tabs.onRemoved.addListener((_tabId, info) => {
   if (!info.isWindowClosing) scheduleSnapshot();
 });
+// URL changes and finished loads only: title-only updates (chat apps, timers) don't matter here.
 chrome.tabs.onUpdated.addListener((_tabId, change) => {
-  if (change.url || change.title) scheduleSnapshot();
+  if (change.url || change.status === "complete") scheduleSnapshot();
 });
 
 async function takeSnapshot() {
