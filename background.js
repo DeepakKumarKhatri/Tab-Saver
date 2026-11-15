@@ -48,3 +48,77 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.runtime.onStartup.addListener(() => {
   handleStartup().catch((e) => console.error("Tab Saver startup:", e));
 });
+
+// ---------------------------------------------------------------------------
+// Saving from the browser (shortcut, right-click)
+// ---------------------------------------------------------------------------
+
+function flash(tabId, text, color = OK_COLOR) {
+  const target = tabId ? { tabId } : {};
+  chrome.action.setBadgeBackgroundColor({ ...target, color }).catch(() => {});
+  chrome.action.setBadgeTextColor?.({ ...target, color: "#ffffff" })?.catch(() => {});
+  chrome.action.setBadgeText({ ...target, text }).catch(() => {});
+  setTimeout(() => chrome.action.setBadgeText({ ...target, text: "" }).catch(() => {}), 2200);
+}
+
+async function defaultGroupId() {
+  const { prefs, groups } = await loadState();
+  return groups.some((g) => g.id === prefs.lastGroupId) ? prefs.lastGroupId : UNSORTED;
+}
+
+async function saveFromTab(tab, groupId) {
+  const url = tab?.url || tab?.pendingUrl;
+  if (!isSaveable(url)) return flash(tab?.id, "✕", ERR_COLOR);
+  await saveTabs([{ url, title: tab.title }], { groupId: groupId || (await defaultGroupId()), remember: !!groupId });
+  flash(tab.id, "✓");
+}
+
+async function saveLink(tab, info, groupId) {
+  const url = info.linkUrl;
+  if (!/^(https?|file):/i.test(url || "")) return flash(tab?.id, "✕", ERR_COLOR);
+  const title = (await linkText(tab, info)) || titleFromUrl(url);
+  await saveTabs([{ url, title }], { groupId: groupId || (await defaultGroupId()), remember: !!groupId });
+  flash(tab?.id, "✓");
+}
+
+/** Read the text of the right-clicked link so a saved link gets a real title (e.g. a YouTube video name). */
+async function linkText(tab, info) {
+  if (!tab?.id) return "";
+  try {
+    const [res] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id, frameIds: [info.frameId ?? 0] },
+      args: [info.linkUrl],
+      func: (href) => {
+        const clean = (s) => (s || "").replace(/\s+/g, " ").trim();
+        let titled = "";
+        let text = "";
+        let label = "";
+        for (const a of document.querySelectorAll("a[href]")) {
+          if (a.href !== href) continue;
+          titled ||= clean(a.getAttribute("title"));
+          const t = clean(a.innerText);
+          if (t.length > text.length && t.length < 300) text = t;
+          label ||= clean(a.getAttribute("aria-label")) || clean(a.querySelector("img[alt]")?.alt);
+        }
+        return titled || text || label;
+      },
+    });
+    return typeof res?.result === "string" ? res.result.slice(0, 300) : "";
+  } catch {
+    return ""; // pages like the Chrome Web Store don't allow scripts
+  }
+}
+
+chrome.commands.onCommand.addListener((command, tab) => {
+  if (command === "open-tab-saver") {
+    // sidePanel.open() must run synchronously inside the shortcut's user gesture.
+    if (chrome.sidePanel?.open && tab?.windowId) {
+      chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => openFullPage(tab.windowId));
+    } else {
+      openFullPage(tab?.windowId);
+    }
+  } else if (command === "save-tab") {
+    const getTab = tab ? Promise.resolve(tab) : chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([t]) => t);
+    getTab.then((t) => saveFromTab(t)).catch((e) => console.error("Tab Saver save:", e));
+  }
+});
