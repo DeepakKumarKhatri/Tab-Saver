@@ -1818,3 +1818,85 @@ function onNavClick(e) {
   const item = e.target.closest(".nav-item");
   if (item) setView(item.dataset.view);
 }
+
+function onItemDragStart(e) {
+  const el = e.target.closest?.(".row.item");
+  if (!el?.__row) return;
+  const it = el.__row.it;
+  const ids = S.selected.has(it.id) ? [...S.selected] : [it.id];
+  const urls = ids.map((id) => S.itemById.get(id)?.url).filter(Boolean);
+  e.dataTransfer.setData(ITEMS_MIME, JSON.stringify(ids));
+  e.dataTransfer.setData("text/uri-list", urls.join("\r\n"));
+  e.dataTransfer.setData("text/plain", urls.join("\n"));
+  e.dataTransfer.effectAllowed = "copyMove";
+  els.app.classList.add("dragging-items");
+}
+
+function bindNavDragAndDrop() {
+  let draggingGroup = null;
+  const clearMarks = () => els.nav.querySelectorAll(".drop-into, .drop-before, .drop-after").forEach((r) => r.classList.remove("drop-into", "drop-before", "drop-after"));
+
+  els.nav.addEventListener("dragstart", (e) => {
+    const row = e.target.closest?.(".nav-row[draggable]");
+    if (!row) return;
+    draggingGroup = row.dataset.group;
+    e.dataTransfer.setData(GROUP_MIME, draggingGroup);
+    e.dataTransfer.effectAllowed = "move";
+    row.classList.add("dragging");
+  });
+  els.nav.addEventListener("dragend", () => {
+    draggingGroup = null;
+    clearMarks();
+    els.nav.querySelectorAll(".dragging").forEach((r) => r.classList.remove("dragging"));
+  });
+  els.nav.addEventListener("dragover", (e) => {
+    const row = e.target.closest?.(".nav-row");
+    clearMarks();
+    if (!row) return;
+    const types = e.dataTransfer.types;
+    if (types.includes(ITEMS_MIME)) {
+      if (row.dataset.group || row.dataset.view === "done") {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        row.classList.add("drop-into");
+      }
+    } else if (types.includes(GROUP_MIME) && draggingGroup && row.dataset.group && row.dataset.group !== draggingGroup && row.closest('[data-zone="groups"]')) {
+      e.preventDefault();
+      const r = row.getBoundingClientRect();
+      row.classList.add(e.clientY < r.top + r.height / 2 ? "drop-before" : "drop-after");
+    }
+  });
+  els.nav.addEventListener("dragleave", (e) => {
+    if (!els.nav.contains(e.relatedTarget)) clearMarks();
+  });
+  els.nav.addEventListener("drop", async (e) => {
+    const row = e.target.closest?.(".nav-row");
+    const after = row?.classList.contains("drop-after");
+    clearMarks();
+    if (!row) return;
+    e.preventDefault();
+    const raw = e.dataTransfer.getData(ITEMS_MIME);
+    if (raw) {
+      const ids = JSON.parse(raw).filter((id) => S.itemById.has(id));
+      if (!ids.length) return;
+      let did = false;
+      if (row.dataset.view === "done") did = await setDone(ids, true);
+      else if (row.dataset.group) {
+        const g = S.groupById.get(row.dataset.group);
+        const { prev } = await db.patchItems(ids, { groupId: g.id });
+        toast(`Moved ${plural(ids.length, "tab")} to ${g.name}`, { undo: () => db.restore({ items: prev }) });
+        did = true;
+      }
+      if (did) clearSelection();
+      return;
+    }
+    const gid = e.dataTransfer.getData(GROUP_MIME);
+    if (!gid || !row.dataset.group || gid === row.dataset.group) return;
+    let beforeId = row.dataset.group;
+    if (after) {
+      const next = row.nextElementSibling;
+      beforeId = next?.dataset.group || null;
+    }
+    if (beforeId !== gid) await db.moveGroup(gid, beforeId);
+  });
+}
