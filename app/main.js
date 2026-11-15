@@ -89,6 +89,7 @@ async function init() {
     height: (r) => (r.t === "item" ? ROW_H : r.t === "head" ? HEAD_H : HINT_H),
     key: (r) => (r.t === "item" ? "i:" + r.it.id : r.key),
     render: renderRow,
+    sig: rowSig,
     onUpdate: updateSticky,
   });
 
@@ -382,6 +383,20 @@ function renderList({ resetScroll = false, restoreScroll = false } = {}) {
   syncActiveAria();
   const total = viewMeta().count;
   els.viewCount.textContent = r.searching ? `${r.order.length} of ${total}` : total;
+}
+
+/** Everything a row's rendering depends on. Rows whose signature hasn't changed are not re-rendered. */
+function rowSig(row) {
+  if (row.t === "item") {
+    const it = row.it;
+    const g = S.groupById.get(it._gid);
+    return [
+      it.id, it.title, it.url, it._gid, g?.name, g?.color, isHidden(it._gid), it.savedAt, it.openedAt, it.doneAt,
+      S.selected.has(it.id), it.id === S.activeId, S.view, S.searching, S.groupByAll, S.query, Math.floor(Date.now() / 60000),
+    ].join("\u0001");
+  }
+  if (row.t === "head") return [row.key, row.label, row.count, row.folded, row.group?.color, row.group?.private, row.group?.kind].join("\u0001");
+  return row.key + row.n;
 }
 
 function renderRow(row, el) {

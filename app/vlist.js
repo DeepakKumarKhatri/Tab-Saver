@@ -4,7 +4,9 @@
 export class VirtualList {
   /**
    * @param {HTMLElement} scroller  the scrolling element
-   * @param {{ height(row): number, key(row): string, render(row, el): void, onUpdate?(scrollTop): void, overscan?: number }} opts
+   * @param {{ height(row): number, key(row): string, render(row, el): void, sig?(row): string, onUpdate?(scrollTop): void, overscan?: number }} opts
+   *   sig(row): a string that changes whenever the row would render differently; rows with an
+   *   unchanged signature are kept as they are instead of being re-rendered.
    */
   constructor(scroller, opts) {
     this.el = scroller;
@@ -46,7 +48,6 @@ export class VirtualList {
     for (let i = 0; i < rows.length; i++) offsets[i + 1] = offsets[i] + this.opts.height(rows[i]);
     this.offsets = offsets;
     this.canvas.style.height = offsets[rows.length] + "px";
-    for (const el of this.pool.values()) el.__row = null; // data may have changed: re-render visible rows
     this.update();
   }
 
@@ -91,11 +92,14 @@ export class VirtualList {
       if (!el) {
         el = this.free.pop() || document.createElement("div");
         el.__row = null;
+        el.__sig = null;
         el.__y = -1;
         this.pool.set(key, el);
       }
       if (el.__row !== row) {
-        this.opts.render(row, el);
+        const sig = this.opts.sig ? this.opts.sig(row) : null;
+        if (sig === null || sig !== el.__sig) this.opts.render(row, el);
+        el.__sig = sig;
         el.__row = row;
       }
       const y = this.offsets[i];
