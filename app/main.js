@@ -1504,3 +1504,317 @@ async function wipeFlow() {
   setView("all");
   toast("Everything was deleted");
 }
+
+// ===========================================================================
+// Side panel / full page switching and the groups drawer
+// ===========================================================================
+
+function setupSurfaceButton() {
+  const btn = els.switchSurfaceBtn;
+  if (MODE === "page") {
+    if (!chrome.sidePanel?.open) return (btn.hidden = true);
+    btn.title = "Open in the side panel";
+    btn.innerHTML = icon("i-sidebar");
+  }
+}
+
+async function switchSurface() {
+  if (MODE === "page") {
+    // Must be called synchronously from the click to count as a user gesture.
+    chrome.sidePanel.open({ windowId: S.windowId }).catch(() => toast("Click the Tab Saver icon in the toolbar to open the side panel"));
+    return;
+  }
+  const tabs = await chrome.tabs.query({});
+  const open = tabs.find((t) => t.url?.startsWith(APP_URL) && t.url.includes("mode=page"));
+  if (open) {
+    await chrome.tabs.update(open.id, { active: true });
+    await chrome.windows.update(open.windowId, { focused: true });
+  } else {
+    await chrome.tabs.create({ url: APP_URL + "?mode=page", windowId: S.windowId });
+  }
+}
+
+function openNav() {
+  if (wideLayout.matches) return;
+  els.app.classList.add("nav-open");
+  els.scrim.hidden = false;
+  els.navToggle.setAttribute("aria-expanded", "true");
+  (els.nav.querySelector(".nav-row.on .nav-item") || els.nav.querySelector(".nav-item"))?.focus();
+}
+
+function closeNav() {
+  if (!els.app.classList.contains("nav-open")) return;
+  els.app.classList.remove("nav-open");
+  els.scrim.hidden = true;
+  els.navToggle.setAttribute("aria-expanded", "false");
+}
+
+// ===========================================================================
+// Events
+// ===========================================================================
+
+function bindEvents() {
+  els.search.addEventListener("input", onSearchInput);
+  els.search.addEventListener("keydown", onSearchKeydown);
+  els.list.addEventListener("click", onListClick);
+  els.list.addEventListener("auxclick", onListAuxClick);
+  els.list.addEventListener("mousedown", (e) => e.button === 1 && e.target.closest(".row.item") && e.preventDefault());
+  els.list.addEventListener("contextmenu", onListContextMenu);
+  els.list.addEventListener("keydown", onListKeydown);
+  els.list.addEventListener("dragstart", onItemDragStart);
+  els.list.addEventListener("dragend", () => els.app.classList.remove("dragging-items"));
+  els.list.addEventListener("focus", () => {
+    if (!S.activeId && S.order.length) setActive(S.order[0].id);
+  });
+  els.sticky.addEventListener("click", onStickyClick);
+  els.empty.addEventListener("click", onEmptyClick);
+
+  els.nav.addEventListener("click", onNavClick);
+  els.nav.addEventListener("contextmenu", (e) => {
+    const row = e.target.closest(".nav-row[data-group]");
+    if (!row) return;
+    e.preventDefault();
+    groupMenu(row.dataset.group, { x: e.clientX, y: e.clientY });
+  });
+  bindNavDragAndDrop();
+
+  els.navToggle.addEventListener("click", openNav);
+  els.scrim.addEventListener("click", closeNav);
+  els.viewBtn.addEventListener("click", () => (wideLayout.matches ? null : openNav()));
+  els.optionsBtn.addEventListener("click", () => viewOptions(els.optionsBtn));
+  els.viewMenuBtn.addEventListener("click", () => viewMenu(els.viewMenuBtn));
+  els.saveWindowBtn.addEventListener("click", saveWindowDialog);
+  els.switchSurfaceBtn.addEventListener("click", switchSurface);
+  els.settingsBtn.addEventListener("click", openSettings);
+  els.current.addEventListener("click", onCurrentClick);
+
+  els.selClear.addEventListener("click", clearSelection);
+  els.selAll.addEventListener("click", selectAll);
+  els.selbar.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-bulk]");
+    if (b) bulk(b.dataset.bulk, b);
+  });
+
+  document.addEventListener("keydown", onDocKeydown);
+  // Favicons that fail to load (rare) fall back to a globe.
+  document.addEventListener(
+    "error",
+    (e) => {
+      const img = e.target;
+      if (img?.tagName !== "IMG" || !img.classList.contains("fav") || img.dataset.failed) return;
+      img.dataset.failed = "1";
+      const fallback = document.createElement("span");
+      fallback.className = "fav fav-fallback";
+      fallback.innerHTML = icon("i-globe");
+      img.replaceWith(fallback);
+    },
+    true
+  );
+  wideLayout.addEventListener("change", () => {
+    closeNav();
+    renderToolbar();
+  });
+  addEventListener("pagehide", () => persistUi.now());
+  document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && persistUi.now());
+}
+
+function onSearchKeydown(e) {
+  if (e.isComposing) return;
+  const mod = e.ctrlKey || e.metaKey;
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    if (S.query !== els.search.value) setQuery(els.search.value);
+    if (!S.order.length) return;
+    els.list.focus({ preventScroll: true });
+    if (!S.activeId || !S.orderIndex.has(S.activeId)) moveActive(0, "start");
+    else setActive(S.activeId, true);
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    if (S.query !== els.search.value) setQuery(els.search.value);
+    const it = S.searching && S.activeId ? S.itemById.get(S.activeId) : null;
+    if (it) openOne(it, { background: mod || e.shiftKey });
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    if (els.search.value) setQuery("");
+    else if (S.order.length) els.list.focus();
+  }
+}
+
+function onDocKeydown(e) {
+  if (e.defaultPrevented || e.isComposing) return;
+  if (document.querySelector("dialog[open]")) return;
+  const typing = e.target.matches?.("input, textarea, select, [contenteditable='true']");
+  const mod = e.ctrlKey || e.metaKey;
+  const key = e.key.toLowerCase();
+  if ((!typing && e.key === "/") || (mod && !e.shiftKey && !e.altKey && (key === "k" || key === "f"))) {
+    e.preventDefault();
+    focusSearch();
+  } else if (mod && key === "z" && !e.shiftKey && !typing) {
+    e.preventDefault();
+    runUndo();
+  } else if (typing) {
+    return;
+  } else if (e.key === "?") {
+    e.preventDefault();
+    showKeys();
+  } else if (e.key === "Escape") {
+    if (els.app.classList.contains("nav-open")) closeNav();
+    else if (S.selected.size) clearSelection();
+    else return;
+    e.preventDefault();
+  }
+}
+
+function onListKeydown(e) {
+  if (e.isComposing || e.altKey) return;
+  const mod = e.ctrlKey || e.metaKey;
+  const active = S.activeId ? S.itemById.get(S.activeId) : null;
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  const after = (p) => p.then((did) => did && S.selected.size && clearSelection());
+  if (mod) {
+    if (key === "Enter" && active) openOne(active, { background: true });
+    else if (key === "a") selectAll();
+    else if (key === "c") copyLinks(targets());
+    else return;
+    e.preventDefault();
+    return;
+  }
+  switch (key) {
+    case "ArrowDown":
+    case "j":
+      moveActive(1);
+      break;
+    case "ArrowUp":
+    case "k":
+      if (!active || S.orderIndex.get(S.activeId) === 0) focusSearch();
+      else moveActive(-1);
+      break;
+    case "Home":
+      moveActive(0, "start");
+      break;
+    case "End":
+      moveActive(0, "end");
+      break;
+    case "PageDown":
+      moveActive(Math.max(1, Math.floor(list.viewport / ROW_H) - 1));
+      break;
+    case "PageUp":
+      moveActive(-Math.max(1, Math.floor(list.viewport / ROW_H) - 1));
+      break;
+    case "Enter":
+    case "o":
+      if (active) openOne(active, { background: e.shiftKey });
+      break;
+    case " ":
+    case "x":
+      if (active) toggleSelect(active.id, e.shiftKey);
+      break;
+    case "e":
+      after(toggleDone(targets()));
+      break;
+    case "Delete":
+    case "Backspace":
+    case "#":
+      after(removeItems(targets()));
+      break;
+    case "m":
+      after(moveItems(targets(), active ? rowAnchor(active.id) : els.list));
+      break;
+    case "r":
+    case "F2":
+      if (active) renameItem(active);
+      break;
+    case "c":
+      copyLinks(targets());
+      break;
+    case "Escape":
+      if (S.selected.size) clearSelection();
+      else focusSearch();
+      break;
+    case "ContextMenu":
+      if (active) itemMenu(active, rowAnchor(active.id));
+      break;
+    case "F10":
+      if (e.shiftKey && active) itemMenu(active, rowAnchor(active.id));
+      else return;
+      break;
+    default:
+      return;
+  }
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+function onListClick(e) {
+  const el = e.target.closest(".row");
+  if (!el?.__row) return;
+  const row = el.__row;
+  const act = e.target.closest("[data-act]")?.dataset.act;
+  if (row.t === "hint") return setView("done");
+  if (row.t === "head") {
+    if (act === "open-group") openGroup(row.gid);
+    else if (act === "group-menu") groupMenu(row.gid, e.target.closest("[data-act]"));
+    else toggleFold(row);
+    return;
+  }
+  const it = row.it;
+  if (act === "pick" || e.shiftKey) {
+    setActive(it.id);
+    return toggleSelect(it.id, e.shiftKey);
+  }
+  setActive(it.id);
+  if (act === "done") setDone([it.id], !it.doneAt);
+  else if (act === "bg") openOne(it, { background: true });
+  else if (act === "more") itemMenu(it, e.target.closest("[data-act]"));
+  else if (S.selected.size && !(e.ctrlKey || e.metaKey)) toggleSelect(it.id);
+  else openOne(it, { background: e.ctrlKey || e.metaKey });
+}
+
+function onListAuxClick(e) {
+  if (e.button !== 1) return;
+  const row = e.target.closest(".row.item")?.__row;
+  if (!row) return;
+  e.preventDefault();
+  openOne(row.it, { background: true });
+}
+
+function onListContextMenu(e) {
+  const row = e.target.closest(".row")?.__row;
+  if (!row) return;
+  e.preventDefault();
+  const point = { x: e.clientX, y: e.clientY };
+  if (row.t === "item") {
+    setActive(row.it.id);
+    itemMenu(row.it, point);
+  } else if (row.t === "head" && row.gid) groupMenu(row.gid, point);
+}
+
+function onStickyClick(e) {
+  const row = els.sticky.__row;
+  if (!row) return;
+  const act = e.target.closest("[data-act]")?.dataset.act;
+  if (act === "open-group") openGroup(row.gid);
+  else if (act === "group-menu") groupMenu(row.gid, e.target.closest("[data-act]"));
+  else toggleFold(row);
+}
+
+function onEmptyClick(e) {
+  const act = e.target.closest("[data-act]")?.dataset.act;
+  if (act === "search-done") setView("done");
+  else if (act === "search-all") setView("all");
+}
+
+function onNavClick(e) {
+  const more = e.target.closest("[data-group-menu]");
+  if (more) return groupMenu(more.dataset.groupMenu, more);
+  const act = e.target.closest("[data-act]")?.dataset.act;
+  if (act === "new-group") return newGroup();
+  if (act === "toggle-sessions") {
+    S.sessionsOpen = !S.sessionsOpen;
+    renderNav();
+    persistUi();
+    return;
+  }
+  const item = e.target.closest(".nav-item");
+  if (item) setView(item.dataset.view);
+}
