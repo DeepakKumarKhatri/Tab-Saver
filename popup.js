@@ -461,7 +461,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const li = document.createElement("li");
     li.innerHTML = `
       <input type="checkbox" class="tab-checkbox" data-url="${escapeAttr(tab.url)}" ${sel ? "checked" : ""} title="Select tab">
-      <img src="${tab.favicon || "icons/default-favicon.png"}" alt="" onerror="this.src='icons/default-favicon.png'">
+      <img src="${tab.favicon || "icons/default-favicon.png"}" alt="">
       <div class="tab-info">
         <a href="${escapeAttr(tab.url)}" title="${escapeAttr(tab.title)}">${escapeHtml(tab.title)}</a>
         <div class="metadata">
@@ -489,6 +489,14 @@ document.addEventListener("DOMContentLoaded", () => {
         </svg>
       </button>
     `;
+
+    const img = li.querySelector("img");
+    if (img) {
+      img.addEventListener("error", () => {
+        img.src = "icons/default-favicon.png";
+      });
+    }
+
     return li;
   }
 
