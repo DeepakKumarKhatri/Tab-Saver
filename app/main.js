@@ -598,3 +598,106 @@ function renderNav() {
   html += `<div class="nav-sec nav-foot">${navRow("done", "Done", c.done, icon("i-check-circle", "nav-ico"))}</div>`;
   els.nav.innerHTML = html;
 }
+
+// ===========================================================================
+// Current tab card (side panel only)
+// ===========================================================================
+
+function watchCurrentTab() {
+  const refresh = debounce(updateCurrentTab, 60);
+  chrome.tabs.onActivated.addListener((info) => info.windowId === S.windowId && refresh());
+  chrome.tabs.onUpdated.addListener((_id, change, tab) => {
+    if (tab.windowId === S.windowId && tab.active && (change.url || change.title || change.status === "complete")) refresh();
+  });
+  updateCurrentTab();
+}
+
+async function updateCurrentTab() {
+  const [tab] = await chrome.tabs.query({ active: true, windowId: S.windowId });
+  S.currentTab = tab || null;
+  renderCurrent();
+}
+
+function renderCurrent() {
+  const el = els.current;
+  if (MODE !== "panel") {
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  const tab = S.currentTab;
+  const url = tab?.url || tab?.pendingUrl;
+  if (!tab || !isSaveable(url)) {
+    el.className = "current is-empty";
+    el.innerHTML = `${icon("i-bookmark")}<span>Open any page, then save it here.</span>`;
+    return;
+  }
+  const saved = S.byKey.get(urlInfo(url).key);
+  const g = saved && S.groupById.get(saved._gid);
+  const target = S.groupById.get(defaultGroupId());
+  const fav = /^(https?|data):/.test(tab.favIconUrl || "") ? tab.favIconUrl : favUrl(url);
+  let actions;
+  if (!saved) {
+    const key = S.shortcuts["save-tab"];
+    actions = `<div class="split"><button type="button" class="btn primary" data-cur="save" title="Save this tab${key ? ` (${escapeHtml(key)})` : ""}">${icon(
+      "i-plus"
+    )}<span>Save to <b>${escapeHtml(target.name)}</b></span></button><button type="button" class="btn primary caret" data-cur="pick" title="Save to another group" aria-label="Save to another group">${icon("i-chevron-down")}</button></div>`;
+  } else if (saved.doneAt) {
+    actions = `<span class="cur-status">${icon("i-check-circle")}In Done</span><button type="button" class="btn sm" data-cur="restore">${icon("i-undo")}Restore</button>`;
+  } else {
+    actions = `<span class="cur-status">${icon("i-check")}Saved in <button type="button" class="link-btn" data-cur="move" title="Move to another group">${escapeHtml(
+      g.name
+    )}</button></span><span class="grow"></span><button type="button" class="btn sm" data-cur="done" title="Finished with it? Move it to Done">${icon("i-check")}Done</button><button type="button" class="icon-btn sm" data-cur="more" title="More">${icon("i-more")}</button>`;
+  }
+  el.className = "current" + (saved ? (saved.doneAt ? " is-done" : " is-saved") : "");
+  el.innerHTML = `<img class="fav" src="${escapeHtml(fav)}" alt=""><div class="cur-main"><div class="cur-title" title="${escapeHtml(url)}">${escapeHtml(
+    tab.title || url
+  )}</div><div class="cur-actions">${actions}</div></div>`;
+}
+
+async function saveCurrent(groupId, createdGroupId = null) {
+  const tab = S.currentTab;
+  const url = tab?.url || tab?.pendingUrl;
+  if (!isSaveable(url)) return;
+  const res = await db.saveTabs([{ url, title: tab.title }], { groupId });
+  const moved = res.updated.length && res.prev[0]?.groupId !== res.groupId;
+  toast(moved ? `Moved to ${res.groupName}` : `Saved to ${res.groupName}`, {
+    undo: () => db.restore({ items: res.prev, removeItemIds: res.added, removeGroupIds: createdGroupId ? [createdGroupId] : [] }),
+  });
+}
+
+async function onCurrentClick(e) {
+  const btn = e.target.closest("[data-cur]");
+  if (!btn) return;
+  const tab = S.currentTab;
+  const url = tab?.url || tab?.pendingUrl;
+  const saved = url && S.byKey.get(urlInfo(url).key);
+  switch (btn.dataset.cur) {
+    case "save":
+      return saveCurrent(defaultGroupId());
+    case "pick": {
+      const g = await chooseGroup(btn, { title: "Save to" });
+      if (g) await saveCurrent(g.id, g.created ? g.id : null);
+      return;
+    }
+    case "done":
+    case "restore":
+      return saved && setDone([saved.id], !saved.doneAt);
+    case "move":
+      return saved && moveItems([saved.id], btn);
+    case "more": {
+      if (!saved) return;
+      const v = await openMenu(btn, [
+        { label: "Move to group…", value: "move", icon: "i-folder" },
+        { label: "Rename…", value: "rename", icon: "i-edit" },
+        { label: "Show in list", value: "show", icon: "i-search" },
+        { sep: true },
+        { label: "Remove from Tab Saver", value: "delete", icon: "i-trash", danger: true },
+      ]);
+      if (v === "move") moveItems([saved.id], btn);
+      else if (v === "rename") renameItem(saved);
+      else if (v === "show") revealItem(saved.id);
+      else if (v === "delete") removeItems([saved.id]);
+    }
+  }
+}
