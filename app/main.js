@@ -493,3 +493,108 @@ function updateSticky(top) {
   sticky.style.right = els.list.offsetWidth - els.list.clientWidth + "px";
   sticky.hidden = false;
 }
+
+function renderEmpty(r) {
+  let html = "";
+  if (!r.rows.length) {
+    if (!S.items.length) {
+      const key = S.shortcuts["save-tab"];
+      html = `<div class="hello">
+        <img src="icons/icon128.png" alt="" width="56" height="56">
+        <h3>Save tabs you want to come back to</h3>
+        <ul>
+          ${MODE === "panel" ? `<li>Click <b>Save</b> above to keep the page you're on</li>` : `<li>Click <b>Save open tabs</b> to keep everything in this window</li>`}
+          ${key ? `<li>Press <kbd>${escapeHtml(key)}</kbd> on any page</li>` : ""}
+          <li>Right-click any link or page and choose <b>Save to Tab Saver</b></li>
+        </ul></div>`;
+    } else if (r.searching) {
+      html = `<h3>No matches for “${escapeHtml(S.query)}”</h3>${
+        r.doneMatches && S.view !== "done"
+          ? `<p><button type="button" class="btn" data-act="search-done">${icon("i-check-circle")}Search Done (${r.doneMatches})</button></p>`
+          : S.view !== "all"
+            ? `<p><button type="button" class="btn" data-act="search-all">Search everything</button></p>`
+            : `<p>Try fewer or different words. The search looks at titles and links.</p>`
+      }`;
+    } else if (S.view === "done") {
+      html = `<h3>Nothing in Done yet</h3><p>When you've finished with a saved tab, press <kbd>E</kbd> or click ${icon("i-check")} on it. It moves here, out of your way, and stays searchable.</p>`;
+    } else if (S.view === "all") {
+      html = `<h3>All caught up</h3><p>Everything you saved is in Done.</p>`;
+    } else {
+      html = `<h3>This group is empty</h3><p>Save tabs into it, or move saved tabs here from another group.</p>`;
+    }
+  }
+  els.empty.innerHTML = html;
+  els.empty.hidden = !html;
+}
+
+function viewMeta(view = S.view) {
+  if (view === "all") return { name: "All saved", count: S.counts.all, lead: icon("i-inbox") };
+  if (view === "done") return { name: "Done", count: S.counts.done, lead: icon("i-check-circle") };
+  const g = S.groupById.get(view);
+  const lead = g.private ? icon("i-lock") : g.kind === "session" ? icon("i-clock") : g.id === UNSORTED ? icon("i-folder") : `<span class="gdot c-${g.color || "grey"}"></span>`;
+  return { name: g.name, count: S.counts.group.get(view) || 0, lead, group: g };
+}
+
+function renderToolbar() {
+  const m = viewMeta();
+  els.viewIcon.innerHTML = m.lead;
+  els.viewName.textContent = m.name;
+  els.viewCount.textContent = m.count;
+  els.viewBtn.title = wideLayout.matches ? m.name : "Show groups";
+  els.search.placeholder =
+    S.view === "all" ? `Search ${plural(S.counts.all, "saved tab")}` : S.view === "done" ? "Search Done" : `Search in ${m.name}`;
+  const gb = S.searching ? null : S.view === "all" ? S.groupByAll : S.groupByGroup;
+  els.optionsLabel.textContent = gb ? `${GROUP_BY_LABEL[gb]} · ${SORT_LABEL[S.sort]}` : "Best match";
+  if (MODE === "page") document.title = S.view === "all" ? "Tab Saver" : `${m.name} · Tab Saver`;
+}
+
+function renderSelbar() {
+  const n = S.selected.size;
+  els.selbar.hidden = !n;
+  els.toolbar.hidden = !!n;
+  els.app.classList.toggle("selecting", n > 0);
+  if (!n) return;
+  els.selCount.textContent = `${n} selected`;
+  const allDone = [...S.selected].every((id) => S.itemById.get(id)?.doneAt);
+  els.selDoneLabel.textContent = allDone ? "Restore" : "Done";
+  els.selAll.hidden = n >= S.order.length;
+  els.selAll.textContent = `Select all ${S.order.length}`;
+}
+
+function navRow(id, label, count, lead, { group = false, drag = false } = {}) {
+  const on = S.view === id;
+  const safe = escapeHtml(id);
+  return `<div class="nav-row${on ? " on" : ""}" data-view="${safe}"${group ? ` data-group="${safe}"` : ""}${drag ? ' draggable="true"' : ""}>
+    <button type="button" class="nav-item" data-view="${safe}"${on ? ' aria-current="page"' : ""}>${lead}<span class="nav-label">${escapeHtml(label)}</span><span class="nav-count">${count || ""}</span></button>${
+      group ? `<button type="button" class="nav-more" data-group-menu="${safe}" title="Group actions" aria-label="Actions for ${escapeHtml(label)}">${icon("i-more")}</button>` : ""
+    }</div>`;
+}
+
+function renderNav() {
+  const c = S.counts;
+  const groupLead = (g) => (g.private ? icon("i-lock", "nav-ico") : `<span class="gdot c-${g.color || "grey"}"></span>`);
+  const unsorted = S.groupById.get(UNSORTED);
+  const normal = S.groups.filter((g) => g.kind !== "session" && g.id !== UNSORTED);
+  const sessions = S.groups.filter((g) => g.kind === "session" && c.total.get(g.id)).sort((a, b) => b.createdAt - a.createdAt);
+  if (S.groupById.get(S.view)?.kind === "session") S.sessionsOpen = true;
+
+  let html = `<div class="nav-sec">${navRow("all", "All saved", c.all, icon("i-inbox", "nav-ico"))}${navRow(UNSORTED, unsorted.name, c.group.get(UNSORTED), icon("i-folder", "nav-ico"), { group: true })}</div>`;
+  html += `<div class="nav-head"><span>Groups</span><button type="button" class="icon-btn sm" data-act="new-group" title="New group">${icon("i-plus")}</button></div>`;
+  html += `<div class="nav-sec" data-zone="groups">${
+    normal.length
+      ? normal.map((g) => navRow(g.id, g.name, c.group.get(g.id), groupLead(g), { group: true, drag: true })).join("")
+      : `<button type="button" class="nav-empty" data-act="new-group">${icon("i-folder-plus")}Create your first group</button>`
+  }</div>`;
+  if (sessions.length) {
+    html += `<button type="button" class="nav-head toggle" data-act="toggle-sessions" aria-expanded="${S.sessionsOpen}">${icon(
+      S.sessionsOpen ? "i-chevron-down" : "i-chevron-right"
+    )}<span>Sessions</span><span class="nav-count">${sessions.length}</span></button>`;
+    if (S.sessionsOpen) {
+      html += `<div class="nav-sec">${sessions
+        .map((g) => navRow(g.id, g.name.replace(/^Session · /, ""), c.group.get(g.id), icon("i-clock", "nav-ico"), { group: true }))
+        .join("")}</div>`;
+    }
+  }
+  html += `<div class="nav-sec nav-foot">${navRow("done", "Done", c.done, icon("i-check-circle", "nav-ico"))}</div>`;
+  els.nav.innerHTML = html;
+}
