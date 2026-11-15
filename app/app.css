@@ -163,3 +163,503 @@ mark {
   border-radius: 3px;
   padding: 0 1px;
 }
+
+/* ---------------------------------------------------------------- layout */
+
+.app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  height: 100vh;
+}
+
+.main {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  height: 100vh;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  grid-template-areas:
+    "tl ta"
+    "cur cur"
+    "search search"
+    "tool tool"
+    "list list";
+}
+
+.top-left {
+  grid-area: tl;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 0 6px 6px;
+}
+
+.top-actions {
+  grid-area: ta;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 8px 6px 0;
+}
+
+.current {
+  grid-area: cur;
+  margin: 2px 12px 10px;
+}
+
+.search {
+  grid-area: search;
+  margin: 0 12px 6px;
+}
+
+.toolbar,
+.selbar {
+  grid-area: tool;
+}
+
+.list-wrap {
+  grid-area: list;
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.brand img {
+  border-radius: 5px;
+}
+
+/* Side panel: "Save open tabs" is an icon button to save room. */
+[data-mode="panel"] #saveWindowBtn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-color: transparent;
+  background: none;
+  color: var(--text-2);
+}
+
+[data-mode="panel"] #saveWindowBtn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+[data-mode="panel"] #saveWindowBtn .lbl {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- sidebar */
+
+.sidebar {
+  position: fixed;
+  z-index: 40;
+  inset: 0 auto 0 0;
+  width: min(300px, 86vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  transform: translateX(-102%);
+  visibility: hidden;
+  transition: transform 0.18s ease, visibility 0s linear 0.18s;
+}
+
+.app.nav-open .sidebar {
+  transform: none;
+  visibility: visible;
+  transition: transform 0.18s ease;
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.sidebar > .brand {
+  padding: 16px 18px 8px;
+}
+
+.nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 4px 8px 12px;
+}
+
+.nav-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.nav-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 34px;
+  padding: 12px 4px 2px 10px;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+}
+
+.nav-head .icon-btn {
+  margin-left: auto;
+}
+
+.nav-head.toggle {
+  cursor: pointer;
+}
+
+.nav-head.toggle:hover {
+  color: var(--text);
+}
+
+.nav-head.toggle .ico {
+  width: 13px;
+  height: 13px;
+  margin-left: -2px;
+}
+
+.nav-head .nav-count {
+  margin-left: auto;
+  padding-right: 10px;
+  letter-spacing: 0;
+}
+
+.nav-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+}
+
+.nav-item {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nav-row:hover .nav-item {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.nav-row.on .nav-item {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+.nav-ico {
+  color: var(--text-3);
+}
+
+.nav-row.on .nav-ico {
+  color: var(--accent);
+}
+
+.nav-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-count {
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.nav-more {
+  position: absolute;
+  right: 4px;
+  display: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.nav-row:hover .nav-more,
+.nav-more:focus-visible {
+  display: grid;
+}
+
+.nav-row:hover .nav-count {
+  visibility: hidden;
+}
+
+.nav-more:hover {
+  background: var(--hover-strong);
+  color: var(--text);
+}
+
+.nav-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  margin: 2px 0;
+  padding: 0 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  cursor: pointer;
+}
+
+.nav-empty:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.nav-foot {
+  margin-top: auto;
+  padding-top: 12px;
+}
+
+.nav-row.dragging {
+  opacity: 0.45;
+}
+
+.nav-row.drop-into .nav-item {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.nav-row.drop-before {
+  box-shadow: 0 -2px 0 var(--accent);
+}
+
+.nav-row.drop-after {
+  box-shadow: 0 2px 0 var(--accent);
+}
+
+.dragging-items .nav-row[data-group] .nav-item,
+.dragging-items .nav-row[data-view="done"] .nav-item {
+  outline: 1px dashed var(--border-strong);
+  outline-offset: -1px;
+}
+
+.gdot {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  margin: 0 3.5px;
+  border-radius: 50%;
+  background: var(--g, var(--g-grey));
+}
+
+.c-grey { --g: var(--g-grey); }
+.c-blue { --g: var(--g-blue); }
+.c-red { --g: var(--g-red); }
+.c-yellow { --g: var(--g-yellow); }
+.c-green { --g: var(--g-green); }
+.c-pink { --g: var(--g-pink); }
+.c-purple { --g: var(--g-purple); }
+.c-cyan { --g: var(--g-cyan); }
+.c-orange { --g: var(--g-orange); }
+
+/* ---------------------------------------------------------------- buttons */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.btn:hover {
+  background: var(--hover);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn.sm {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+
+.btn.sm .ico {
+  width: 14px;
+  height: 14px;
+}
+
+.btn b {
+  font-weight: 700;
+}
+
+.btn.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.btn.primary:hover {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+}
+
+.btn.ghost {
+  border-color: transparent;
+  background: transparent;
+}
+
+.btn.ghost:hover {
+  background: var(--hover);
+}
+
+.btn.danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn.danger:hover {
+  filter: brightness(0.92);
+}
+
+.btn.danger-ghost {
+  border-color: var(--danger-line);
+  background: transparent;
+  color: var(--danger);
+}
+
+.btn.danger-ghost:hover {
+  background: var(--danger-soft);
+}
+
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.icon-btn.sm {
+  width: 26px;
+  height: 26px;
+}
+
+.icon-btn.sm .ico {
+  width: 14px;
+  height: 14px;
+}
+
+.link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+.tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tool-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.tool-btn.danger:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.grow {
+  flex: 1;
+}
