@@ -1176,3 +1176,196 @@ async function deleteGroupFlow(g) {
   if (S.view === g.id) setView("all");
   toast(`Deleted “${g.name}”`, { undo: () => db.restore({ groups: [{ group: res.group, index: res.index }], items: res.prev }) });
 }
+
+// ===========================================================================
+// Toolbar menus
+// ===========================================================================
+
+async function viewOptions(anchor) {
+  const inAll = S.view === "all";
+  const gb = inAll ? S.groupByAll : S.groupByGroup;
+  const dateLabel = S.view === "done" ? "Date finished" : "Date saved";
+  const v = await openMenu(
+    anchor,
+    [
+      { header: "Group by" },
+      ...(inAll ? [{ label: "Group", value: "g:group", checked: gb === "group" }] : []),
+      { label: dateLabel, value: "g:date", checked: gb === "date" },
+      { label: "Website", value: "g:site", checked: gb === "site" },
+      { label: "Nothing", value: "g:none", checked: gb === "none" },
+      { sep: true },
+      { header: "Sort" },
+      { label: "Newest first", value: "s:newest", checked: S.sort === "newest" },
+      { label: "Oldest first", value: "s:oldest", checked: S.sort === "oldest" },
+      { label: "Title (A to Z)", value: "s:title", checked: S.sort === "title" },
+    ],
+    { label: "View options" }
+  );
+  if (!v) return;
+  const [kind, value] = v.split(":");
+  if (kind === "g") {
+    if (inAll) S.groupByAll = value;
+    else S.groupByGroup = value;
+  } else S.sort = value;
+  renderToolbar();
+  renderList({ resetScroll: true });
+  persistUi();
+}
+
+async function viewMenu(anchor) {
+  const g = S.groupById.get(S.view);
+  const items = g ? [...groupMenuItems(g), { sep: true }] : [];
+  if (S.view === "done") items.push({ label: "Delete everything in Done…", value: "clear-done", icon: "i-trash", danger: true, disabled: !S.counts.done }, { sep: true });
+  items.push({ label: "Select all", value: "select-all", icon: "i-check-square", hint: "Ctrl+A", disabled: !S.order.length });
+  if (S.heads.length > 1) {
+    items.push({ label: "Collapse all sections", value: "fold", icon: "i-chevron-right" }, { label: "Expand all sections", value: "unfold", icon: "i-chevron-down" });
+  }
+  items.push({ sep: true }, { label: "Keyboard shortcuts", value: "keys", icon: "i-keyboard", hint: "?" });
+  const v = await openMenu(anchor, items);
+  if (!v) return;
+  if (g && (v.startsWith("g:") || v.startsWith("color:"))) return handleGroupChoice(g, v);
+  if (v === "select-all") selectAll();
+  else if (v === "fold") setFoldAll(true);
+  else if (v === "unfold") setFoldAll(false);
+  else if (v === "keys") showKeys();
+  else if (v === "clear-done") clearDone();
+}
+
+async function clearDone() {
+  const ids = S.items.filter((it) => it.doneAt).map((it) => it.id);
+  if (!ids.length) return;
+  const ok = await confirmAction({ title: `Delete ${plural(ids.length, "tab")} in Done?`, text: "You can undo this right after.", ok: "Delete", danger: true });
+  if (ok) removeItems(ids);
+}
+
+function showKeys() {
+  const rows = [
+    ["/", "Search (also Ctrl+K)"],
+    ["↑ ↓", "Move through the list"],
+    ["Enter", "Open"],
+    ["Ctrl + Enter", "Open in a background tab"],
+    ["E", "Done with it (or restore)"],
+    ["X", "Select (Shift for a range)"],
+    ["Ctrl + A", "Select all"],
+    ["M", "Move to a group"],
+    ["R", "Rename"],
+    ["C", "Copy link"],
+    ["Delete", "Delete"],
+    ["Ctrl + Z", "Undo"],
+    ["Esc", "Clear selection, then search"],
+  ];
+  const global = [
+    [S.shortcuts["save-tab"], "Save the current tab (anywhere in Chrome)"],
+    [S.shortcuts["open-tab-saver"], "Open Tab Saver (anywhere in Chrome)"],
+  ].filter(([k]) => k);
+  openDialog({
+    title: "Keyboard shortcuts",
+    body: `<div class="keys">${[...global, ...rows].map(([k, d]) => `<div class="kv"><span>${escapeHtml(d)}</span><kbd>${escapeHtml(k)}</kbd></div>`).join("")}</div>`,
+    buttons: [{ label: "Close", value: "ok", kind: "primary" }],
+  });
+}
+
+// ===========================================================================
+// Save open tabs
+// ===========================================================================
+
+async function saveWindowDialog() {
+  const win = await chrome.windows.getCurrent({ populate: true });
+  const rows = (win.tabs || [])
+    .filter((t) => isSaveable(t.url || t.pendingUrl))
+    .map((t) => {
+      const url = t.url || t.pendingUrl;
+      const ex = S.byKey.get(urlInfo(url).key);
+      return { tab: t, url, saved: !!ex && !ex.doneAt };
+    });
+  if (!rows.length) return toast("There are no tabs here to save");
+
+  const stamp = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(Date.now());
+  const names = S.groups
+    .filter((g) => g.kind !== "session")
+    .map((g) => `<option value="${escapeHtml(g.name)}"></option>`)
+    .join("");
+  const body = `
+    <label class="field"><span class="field-label">Save to group</span>
+      <input type="text" class="input" data-name value="${escapeHtml("Saved " + stamp)}" list="ts-group-names" maxlength="60" autocomplete="off" spellcheck="false">
+      <datalist id="ts-group-names">${names}</datalist>
+    </label>
+    <p class="field-hint" data-hint></p>
+    <div class="tabpick">
+      <label class="tabpick-all"><input type="checkbox" data-all><span>Tabs in this window</span><span class="muted" data-count></span></label>
+      <div class="tabpick-list">${rows
+        .map(
+          (r, i) =>
+            `<label class="tabpick-row"><input type="checkbox" data-i="${i}"${r.saved ? "" : " checked"}><img class="fav" src="${favUrl(r.url)}" alt=""><span class="tp-title">${escapeHtml(
+              r.tab.title || r.url
+            )}</span>${r.saved ? `<span class="tp-tag" title="Already in Tab Saver. Tick it to move it into this group.">saved</span>` : ""}</label>`
+        )
+        .join("")}</div>
+    </div>
+    <label class="check"><input type="checkbox" data-close><span>Close these tabs after saving</span></label>`;
+
+  let picked = [];
+  let groupName = "";
+  let closeAfter = false;
+  const choice = await openDialog({
+    title: "Save open tabs",
+    wide: true,
+    body,
+    buttons: [
+      { label: "Cancel", value: "" },
+      { label: "Save", value: "save", kind: "primary" },
+    ],
+    init: (dlg) => {
+      const input = dlg.querySelector("[data-name]");
+      const hint = dlg.querySelector("[data-hint]");
+      const boxes = [...dlg.querySelectorAll("[data-i]")];
+      const all = dlg.querySelector("[data-all]");
+      const saveBtn = dlg.querySelector('.dlg-foot [data-value="save"]');
+      const update = () => {
+        const n = boxes.filter((b) => b.checked).length;
+        all.checked = n === boxes.length;
+        all.indeterminate = n > 0 && n < boxes.length;
+        dlg.querySelector("[data-count]").textContent = `${n} of ${boxes.length} selected`;
+        saveBtn.textContent = n ? `Save ${plural(n, "tab")}` : "Save";
+        saveBtn.disabled = !n;
+        const existing = db.findGroupByName(S.groups, input.value);
+        hint.textContent = !input.value.trim() ? "" : existing ? `Adds them to your existing group “${existing.name}”.` : "Creates a new group.";
+      };
+      all.addEventListener("change", () => {
+        boxes.forEach((b) => (b.checked = all.checked));
+        update();
+      });
+      dlg.addEventListener("change", (e) => e.target.matches("[data-i]") && update());
+      input.addEventListener("input", update);
+      update();
+      input.focus();
+      input.select();
+    },
+    validate: (_v, dlg) => {
+      groupName = dlg.querySelector("[data-name]").value.trim();
+      if (!groupName) return "Give the group a name.";
+      picked = [...dlg.querySelectorAll("[data-i]")].filter((b) => b.checked).map((b) => rows[Number(b.dataset.i)]);
+      if (!picked.length) return "Pick at least one tab.";
+      closeAfter = dlg.querySelector("[data-close]").checked;
+      return "";
+    },
+  });
+  if (choice !== "save") return;
+
+  const res = await db.saveTabs(
+    picked.map((r) => ({ url: r.url, title: r.tab.title })),
+    { groupName, existing: "move" }
+  );
+  if (closeAfter) {
+    const ids = picked.map((r) => r.tab.id);
+    if ((win.tabs || []).every((t) => ids.includes(t.id))) await chrome.tabs.create({ windowId: win.id });
+    await chrome.tabs.remove(ids).catch(() => {});
+  }
+  await refreshFromStorage();
+  setView(res.groupId);
+  const n = res.added.length + res.updated.length;
+  toast(
+    `Saved ${plural(n, "tab")} to ${res.groupName}${closeAfter ? " and closed them" : ""}`,
+    closeAfter ? {} : { undo: () => db.restore({ items: res.prev, removeItemIds: res.added, removeGroupIds: res.createdGroup ? [res.createdGroup] : [] }) }
+  );
+}
