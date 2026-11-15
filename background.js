@@ -122,3 +122,51 @@ chrome.commands.onCommand.addListener((command, tab) => {
     getTab.then((t) => saveFromTab(t)).catch((e) => console.error("Tab Saver save:", e));
   }
 });
+
+// ---------------------------------------------------------------------------
+// Right-click menus (rebuilt whenever groups change)
+// ---------------------------------------------------------------------------
+
+let menuQueue = Promise.resolve();
+let menuSignature = "";
+
+function rebuildMenus() {
+  menuQueue = menuQueue.then(buildMenus).catch((e) => console.error("Tab Saver menus:", e));
+  return menuQueue;
+}
+
+async function buildMenus() {
+  const { groups } = await loadState();
+  const targets = groups.filter((g) => g.kind !== "session").slice(0, MENU_GROUP_LIMIT);
+  const signature = JSON.stringify(targets.map((g) => [g.id, g.name]));
+  if (signature === menuSignature) return;
+  menuSignature = signature;
+
+  await chrome.contextMenus.removeAll();
+  const create = (props) => chrome.contextMenus.create(props, () => void chrome.runtime.lastError);
+  for (const [ctx, title] of [
+    ["page", "Save page to Tab Saver"],
+    ["link", "Save link to Tab Saver"],
+  ]) {
+    create({ id: ctx, title, contexts: [ctx] });
+    for (const g of targets) create({ id: `${ctx}:${g.id}`, parentId: ctx, title: g.name, contexts: [ctx] });
+  }
+  create({ id: "action:save", title: "Save this tab", contexts: ["action"] });
+  create({ id: "action:page", title: "Open Tab Saver in a tab", contexts: ["action"] });
+}
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  const [kind, groupId] = String(info.menuItemId).split(":");
+  let job;
+  if (kind === "action") job = groupId === "page" ? openFullPage(tab?.windowId) : saveFromTab(tab);
+  else if (kind === "page") job = saveFromTab(tab, groupId);
+  else if (kind === "link") job = saveLink(tab, info, groupId);
+  job?.catch((e) => {
+    console.error("Tab Saver:", e);
+    flash(tab?.id, "!", ERR_COLOR);
+  });
+});
+
+chrome.notifications.onClicked.addListener((id) => {
+  if (id === "session") openFullPage();
+});
