@@ -199,10 +199,10 @@ let renderQueued = false;
 function scheduleRender() {
   if (renderQueued) return;
   renderQueued = true;
-  requestAnimationFrame(() => {
+  setTimeout(() => {
     renderQueued = false;
     renderAll();
-  });
+  }, 0);
 }
 
 function onStorageChanged(changes, area) {
@@ -735,10 +735,12 @@ function setQuery(q) {
   persistUi();
 }
 
-let queryFrame = 0;
+let queryTimer = 0;
 function onSearchInput() {
-  cancelAnimationFrame(queryFrame);
-  queryFrame = requestAnimationFrame(() => setQuery(els.search.value));
+  // Instant for normal libraries; a short pause while typing only for very large ones.
+  clearTimeout(queryTimer);
+  if (S.items.length < 4000) setQuery(els.search.value);
+  else queryTimer = setTimeout(() => setQuery(els.search.value), 60);
 }
 
 function focusSearch() {

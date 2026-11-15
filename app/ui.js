@@ -19,7 +19,8 @@ export function toast(message, { undo, duration } = {}) {
   el.innerHTML = `<span class="toast-msg">${escapeHtml(message)}</span>${undo ? `<button class="toast-btn" type="button">Undo</button>` : ""}`;
   el.querySelector(".toast-btn")?.addEventListener("click", () => runUndo());
   el.hidden = false;
-  requestAnimationFrame(() => el.classList.add("show"));
+  void el.offsetWidth; // start the fade-in transition from the hidden state
+  el.classList.add("show");
   toastTimer = setTimeout(hideToast, duration ?? (undo ? 6000 : 2600));
 }
 
