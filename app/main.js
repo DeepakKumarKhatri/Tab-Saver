@@ -1079,3 +1079,100 @@ async function selectionMenu(anchor) {
   ]);
   if (v) bulk(v, anchor);
 }
+
+// ===========================================================================
+// Groups
+// ===========================================================================
+
+function groupMenuItems(g) {
+  const n = S.counts.group.get(g.id) || 0;
+  return [
+    { label: n ? `Open all ${n} as a tab group` : "Open all", value: "g:open", icon: "i-external", disabled: !n },
+    { label: "Rename…", value: "g:rename", icon: "i-edit" },
+    { swatches: GROUP_COLORS, current: g.color || "grey" },
+    { label: g.private ? "Stop hiding titles" : "Hide titles (private)", value: "g:private", icon: g.private ? "i-eye" : "i-lock" },
+    ...(g.private ? [{ label: S.revealed.has(g.id) ? "Hide titles again" : "Show titles for now", value: "g:reveal", icon: "i-eye" }] : []),
+    ...(g.kind === "session" ? [{ label: "Keep as a regular group", value: "g:promote", icon: "i-folder" }] : []),
+    ...(g.id !== UNSORTED ? [{ sep: true }, { label: "Delete group…", value: "g:delete", icon: "i-trash", danger: true }] : []),
+  ];
+}
+
+async function groupMenu(gid, anchor) {
+  const g = S.groupById.get(gid);
+  if (g) handleGroupChoice(g, await openMenu(anchor, groupMenuItems(g), { label: g.name }));
+}
+
+async function handleGroupChoice(g, v) {
+  if (!v) return;
+  if (v.startsWith("color:")) return db.patchGroup(g.id, { color: v.slice(6) });
+  switch (v) {
+    case "g:open":
+      return openGroup(g.id);
+    case "g:rename":
+      return renameGroup(g);
+    case "g:private":
+      S.revealed.delete(g.id);
+      await db.patchGroup(g.id, { private: !g.private });
+      return toast(g.private ? `“${g.name}” titles are visible again` : `“${g.name}” is private: its titles are hidden and it's left out of All saved`);
+    case "g:reveal":
+      if (S.revealed.has(g.id)) S.revealed.delete(g.id);
+      else S.revealed.add(g.id);
+      applyState({ items: S.items, groups: S.groups, prefs: S.prefs });
+      return renderAll();
+    case "g:promote":
+      await db.patchGroup(g.id, { kind: null, collapsed: null, name: g.name.replace(/^Session · /, "Session ") });
+      return toast("Moved to your groups");
+    case "g:delete":
+      return deleteGroupFlow(g);
+  }
+}
+
+async function newGroup() {
+  closeNav();
+  const name = await promptText({
+    title: "New group",
+    placeholder: "e.g. Watch later",
+    okLabel: "Create group",
+    maxLength: 60,
+    validate: (v) => (db.findGroupByName(S.groups, v) ? "You already have a group with that name." : ""),
+  });
+  if (!name) return;
+  const g = await db.createGroup(name);
+  await refreshFromStorage();
+  setView(g.id);
+}
+
+async function renameGroup(g) {
+  const name = await promptText({
+    title: "Rename group",
+    value: g.name,
+    okLabel: "Rename",
+    maxLength: 60,
+    validate: (v) => {
+      const other = db.findGroupByName(S.groups, v);
+      return other && other.id !== g.id ? "Another group already has that name." : "";
+    },
+  });
+  if (!name || name === g.name) return;
+  const res = await db.patchGroup(g.id, { name });
+  if (res) toast(`Renamed to ${name}`, { undo: () => db.patchGroup(g.id, { name: res.prev.name }) });
+}
+
+async function deleteGroupFlow(g) {
+  const total = S.counts.total.get(g.id) || 0;
+  const unsortedName = escapeHtml(S.groupById.get(UNSORTED).name);
+  const choice = await openDialog({
+    title: `Delete “${g.name}”?`,
+    body: `<p class="dlg-text">${total ? `It has ${plural(total, "saved tab")}. Keep them (they move to ${unsortedName}) or delete them as well.` : "This group is empty."}</p>`,
+    buttons: [
+      { label: "Cancel", value: "" },
+      ...(total ? [{ label: `Delete the ${plural(total, "tab")} too`, value: "all", kind: "danger-ghost" }] : []),
+      { label: total ? "Delete group, keep tabs" : "Delete group", value: "keep", kind: "danger" },
+    ],
+  });
+  if (!choice) return;
+  const res = await db.deleteGroup(g.id, { withItems: choice === "all" });
+  if (!res) return;
+  if (S.view === g.id) setView("all");
+  toast(`Deleted “${g.name}”`, { undo: () => db.restore({ groups: [{ group: res.group, index: res.index }], items: res.prev }) });
+}
