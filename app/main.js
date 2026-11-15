@@ -380,6 +380,8 @@ function renderList({ resetScroll = false, restoreScroll = false } = {}) {
   renderEmpty(r);
   renderSelbar();
   syncActiveAria();
+  const total = viewMeta().count;
+  els.viewCount.textContent = r.searching ? `${r.order.length} of ${total}` : total;
 }
 
 function renderRow(row, el) {
@@ -540,7 +542,7 @@ function renderToolbar() {
   const m = viewMeta();
   els.viewIcon.innerHTML = m.lead;
   els.viewName.textContent = m.name;
-  els.viewCount.textContent = m.count;
+  els.viewCount.textContent = S.searching ? `${S.order.length} of ${m.count}` : m.count;
   els.viewBtn.title = wideLayout.matches ? m.name : "Show groups";
   els.search.placeholder =
     S.view === "all" ? `Search ${plural(S.counts.all, "saved tab")}` : S.view === "done" ? "Search Done" : `Search in ${m.name}`;
