@@ -364,7 +364,7 @@ function renderList({ resetScroll = false, restoreScroll = false } = {}) {
   // Keep the keyboard cursor on something visible (e.g. the next item after one is deleted).
   if (S.activeId && !S.orderIndex.has(S.activeId)) {
     const i = Math.min(S.lastActiveIndex, r.order.length - 1);
-    S.activeId = i >= 0 && document.activeElement === els.list ? r.order[i].id : null;
+    S.activeId = i >= 0 && els.list.contains(document.activeElement) ? r.order[i].id : null;
   }
   if (r.searching && !S.activeId && r.order.length) S.activeId = r.order[0].id;
 
@@ -834,7 +834,7 @@ function targets() {
 function rowAnchor(id) {
   let found = null;
   list.forEachRendered((el, row) => {
-    if (row.t === "item" && row.it.id === id) found = el.querySelector("[data-act=more]") || el;
+    if (row.t === "item" && row.it.id === id) found = el;
   });
   return found || els.list;
 }
@@ -1655,6 +1655,10 @@ function onDocKeydown(e) {
     runUndo();
   } else if (typing) {
     return;
+  } else if (!els.list.contains(e.target) && ["ArrowDown", "ArrowUp", "j", "k"].includes(e.key) && !e.target.closest?.(".sidebar, .current, .toolbar, .selbar")) {
+    // Nothing focused (e.g. after a dialog closed): arrow keys go to the list.
+    els.list.focus({ preventScroll: true });
+    onListKeydown(e);
   } else if (e.key === "?") {
     e.preventDefault();
     showKeys();
@@ -1750,6 +1754,8 @@ function onListClick(e) {
   const el = e.target.closest(".row");
   if (!el?.__row) return;
   const row = el.__row;
+  // Row buttons can take focus on click and then vanish on re-render; keep focus on the list.
+  if (document.activeElement !== els.list) els.list.focus({ preventScroll: true });
   const act = e.target.closest("[data-act]")?.dataset.act;
   if (row.t === "hint") return setView("done");
   if (row.t === "head") {
