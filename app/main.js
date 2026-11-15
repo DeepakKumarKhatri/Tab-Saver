@@ -1369,3 +1369,138 @@ async function saveWindowDialog() {
     closeAfter ? {} : { undo: () => db.restore({ items: res.prev, removeItemIds: res.added, removeGroupIds: res.createdGroup ? [res.createdGroup] : [] }) }
   );
 }
+
+// ===========================================================================
+// Settings, backup
+// ===========================================================================
+
+async function openSettings() {
+  const [bytes, cmds] = await Promise.all([chrome.storage.local.getBytesInUse(null).catch(() => 0), chrome.commands.getAll().catch(() => [])]);
+  for (const c of cmds) S.shortcuts[c.name] = c.shortcut || "";
+  const p = S.prefs;
+  const size = bytes < 1048576 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1048576).toFixed(1)} MB`;
+  const groupCount = S.groups.filter((g) => g.kind !== "session" && g.id !== UNSORTED).length;
+  const body = `
+    <section class="set">
+      <h3>When I open a saved tab</h3>
+      <label class="radio"><input type="radio" name="onOpen" value="keep"${p.onOpen !== "done" ? " checked" : ""}><span><b>Keep it in my list</b><small>It gets an "opened" note so you know you've been there.</small></span></label>
+      <label class="radio"><input type="radio" name="onOpen" value="done"${p.onOpen === "done" ? " checked" : ""}><span><b>Move it to Done</b><small>Your list only shows what you haven't opened yet. Done stays searchable.</small></span></label>
+    </section>
+    <section class="set">
+      <h3>Sessions</h3>
+      <label class="switch"><input type="checkbox" name="autoSave"${p.autoSave ? " checked" : ""}><span class="track"></span><span><b>Save my open tabs when Chrome restarts</b><small>Each time Chrome starts, the tabs you had open last time are filed under Sessions.</small></span></label>
+    </section>
+    <section class="set">
+      <h3>Shortcuts</h3>
+      <div class="kv"><span>Save the current tab</span><kbd>${escapeHtml(S.shortcuts["save-tab"] || "Not set")}</kbd></div>
+      <div class="kv"><span>Open Tab Saver</span><kbd>${escapeHtml(S.shortcuts["open-tab-saver"] || "Not set")}</kbd></div>
+      <div class="set-actions"><button type="button" class="btn" data-set="shortcuts">Change shortcuts</button><button type="button" class="btn ghost" data-set="keys">${icon("i-keyboard")}Keys inside Tab Saver</button></div>
+    </section>
+    <section class="set">
+      <h3>Backup</h3>
+      <p class="muted">${plural(S.items.length - S.counts.done, "saved tab")}, ${S.counts.done} done, ${plural(groupCount, "group")}. Using ${size}.</p>
+      <div class="set-actions"><button type="button" class="btn" data-set="export">${icon("i-download")}Export backup</button><button type="button" class="btn" data-set="import">${icon(
+        "i-upload"
+      )}Import backup</button><input type="file" accept=".json,application/json" hidden data-file></div>
+    </section>
+    <section class="set danger-zone">
+      <h3>Danger zone</h3>
+      <div class="set-actions"><button type="button" class="btn danger-ghost" data-set="wipe">${icon("i-trash")}Delete everything…</button></div>
+    </section>`;
+
+  await openDialog({
+    title: "Settings",
+    wide: true,
+    body,
+    buttons: [{ label: "Done", value: "ok", kind: "primary" }],
+    init: (dlg, { close }) => {
+      dlg.addEventListener("change", async (e) => {
+        const t = e.target;
+        if (t.name === "onOpen") {
+          await db.setPrefs({ onOpen: t.value });
+          toast("Saved");
+        } else if (t.name === "autoSave") {
+          await db.setPrefs({ autoSave: t.checked });
+          toast(t.checked ? "Sessions will be saved when Chrome restarts" : "Session saving is off");
+        } else if (t.matches("[data-file]")) {
+          const file = t.files[0];
+          t.value = "";
+          if (file) {
+            close(null);
+            importFlow(file);
+          }
+        }
+      });
+      dlg.addEventListener("click", (e) => {
+        const a = e.target.closest("[data-set]")?.dataset.set;
+        if (a === "shortcuts") chrome.tabs.create({ url: "chrome://extensions/shortcuts" });
+        else if (a === "keys") {
+          close(null);
+          showKeys();
+        } else if (a === "export") exportFlow();
+        else if (a === "import") dlg.querySelector("[data-file]").click();
+        else if (a === "wipe") {
+          close(null);
+          wipeFlow();
+        }
+      });
+      dlg.querySelector(".dlg-foot .primary")?.focus();
+    },
+  });
+}
+
+async function exportFlow() {
+  const data = await db.exportData();
+  const blob = new Blob([JSON.stringify(data, null, 1)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `tab-saver-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  toast("Backup downloaded");
+}
+
+async function importFlow(file) {
+  let parsed;
+  try {
+    parsed = db.parseBackup(JSON.parse(await file.text()));
+  } catch (e) {
+    return toast(e instanceof SyntaxError ? "That file isn't valid JSON" : e.message || "Couldn't read that file");
+  }
+  const groupCount = parsed.groups.filter((g) => g.id !== UNSORTED).length;
+  const choice = await openDialog({
+    title: "Import backup",
+    body: `<p class="dlg-text">This file has ${plural(parsed.items.length, "saved tab")} in ${plural(groupCount, "group")}. Tabs you already have are skipped.</p>`,
+    buttons: [
+      { label: "Cancel", value: "" },
+      { label: "Replace everything", value: "replace", kind: "danger-ghost" },
+      { label: "Add to my tabs", value: "merge", kind: "primary" },
+    ],
+  });
+  if (!choice) return;
+  if (
+    choice === "replace" &&
+    !(await confirmAction({ title: "Replace everything?", text: `This deletes your ${plural(S.items.length, "saved tab")} and loads the backup instead.`, ok: "Replace", danger: true }))
+  ) {
+    return;
+  }
+  const res = await db.importBackup(parsed, choice);
+  toast(`Imported ${plural(res.added, "tab")}${res.skipped ? ` (${res.skipped} already saved)` : ""}`);
+}
+
+async function wipeFlow() {
+  const typed = await promptText({
+    title: "Delete everything?",
+    text: `This permanently deletes all ${plural(S.items.length, "saved tab")} and every group. Export a backup first if you might want them. Type <b>DELETE</b> to confirm.`,
+    placeholder: "DELETE",
+    okLabel: "Delete everything",
+    danger: true,
+    validate: (v) => (v === "DELETE" ? "" : "Type DELETE in capitals to confirm."),
+  });
+  if (typed !== "DELETE") return;
+  await db.wipeAll();
+  setView("all");
+  toast("Everything was deleted");
+}
