@@ -338,3 +338,158 @@ function computeRows() {
   if (searching && doneMatches && !inDone) rows.push({ t: "hint", key: "hint:done", n: doneMatches });
   return { rows, heads, order, searching, doneMatches };
 }
+
+// ===========================================================================
+// Rendering
+// ===========================================================================
+
+function renderAll(opts = {}) {
+  renderNav();
+  renderToolbar();
+  renderList(opts);
+  renderCurrent();
+}
+
+function renderList({ resetScroll = false, restoreScroll = false } = {}) {
+  const r = computeRows();
+  S.rows = r.rows;
+  S.heads = r.heads;
+  S.order = r.order;
+  S.searching = r.searching;
+  S.rowIndex = new Map();
+  r.rows.forEach((row, i) => row.t === "item" && S.rowIndex.set(row.it.id, i));
+  S.orderIndex = new Map(r.order.map((it, i) => [it.id, i]));
+
+  // Keep the keyboard cursor on something visible (e.g. the next item after one is deleted).
+  if (S.activeId && !S.orderIndex.has(S.activeId)) {
+    const i = Math.min(S.lastActiveIndex, r.order.length - 1);
+    S.activeId = i >= 0 && document.activeElement === els.list ? r.order[i].id : null;
+  }
+  if (r.searching && !S.activeId && r.order.length) S.activeId = r.order[0].id;
+
+  els.app.classList.toggle("searching", r.searching);
+  els.app.classList.toggle("selecting", S.selected.size > 0);
+  if (resetScroll) els.list.scrollTop = 0;
+  els.sticky.__row = null;
+  list.setRows(r.rows);
+  if (restoreScroll && S.restoreScrollTop) {
+    list.scrollTop = S.restoreScrollTop;
+    S.restoreScrollTop = 0;
+  }
+  renderEmpty(r);
+  renderSelbar();
+  syncActiveAria();
+}
+
+function renderRow(row, el) {
+  if (row.t === "item") return renderItem(row.it, el);
+  el.removeAttribute("id");
+  el.removeAttribute("aria-selected");
+  el.removeAttribute("draggable");
+  el.setAttribute("role", "presentation");
+  if (row.t === "head") {
+    el.className = "row head" + (row.folded ? " folded" : "") + (row.gid ? " ghead" : "");
+    el.innerHTML = headHtml(row);
+  } else {
+    el.className = "row hint";
+    el.innerHTML = `<button type="button" class="link-btn" data-act="search-done">${icon("i-check-circle")}<span>${plural(row.n, "more match")} in Done</span></button>`;
+  }
+}
+
+function headHtml(row) {
+  const g = row.group;
+  const lead = g ? (g.private ? icon("i-lock", "h-ico") : g.kind === "session" ? icon("i-clock", "h-ico") : `<span class="gdot c-${g.color || "grey"}"></span>`) : "";
+  const label = g?.kind === "session" ? row.label.replace(/^Session · /, "Session: ") : row.label;
+  const acts = g
+    ? `<span class="h-acts"><button type="button" tabindex="-1" class="h-btn" data-act="open-group" title="Open all as a tab group">${icon("i-external")}<span>Open all</span></button><button type="button" tabindex="-1" class="h-btn" data-act="group-menu" title="Group actions">${icon("i-more")}</button></span>`
+    : "";
+  return `<span class="fold" data-act="fold">${icon("i-chevron-down")}</span>${lead}<span class="h-label">${escapeHtml(label)}</span><span class="h-count">${row.count}</span><span class="grow"></span>${acts}`;
+}
+
+function highlight(text, tokens) {
+  const lower = text.toLowerCase();
+  if (lower.length !== text.length) return escapeHtml(text);
+  const marks = [];
+  for (const t of tokens) {
+    for (let i = lower.indexOf(t); i >= 0 && marks.length < 24; i = lower.indexOf(t, i + t.length)) marks.push([i, i + t.length]);
+  }
+  if (!marks.length) return escapeHtml(text);
+  marks.sort((a, b) => a[0] - b[0]);
+  let out = "";
+  let pos = 0;
+  for (const [s, e] of marks) {
+    if (e <= pos) continue;
+    const from = Math.max(s, pos);
+    out += escapeHtml(text.slice(pos, from)) + "<mark>" + escapeHtml(text.slice(from, e)) + "</mark>";
+    pos = e;
+  }
+  return out + escapeHtml(text.slice(pos));
+}
+
+function renderItem(it, el) {
+  const g = S.groupById.get(it._gid);
+  const masked = isHidden(it._gid);
+  const sel = S.selected.has(it.id);
+  const inDone = S.view === "done";
+  el.className = "row item" + (sel ? " sel" : "") + (it.id === S.activeId ? " active" : "") + (masked ? " masked" : "");
+  el.id = "opt-" + it.id;
+  el.setAttribute("role", "option");
+  el.setAttribute("aria-selected", sel ? "true" : "false");
+  el.draggable = !masked;
+
+  const when = inDone ? it.doneAt : it.savedAt;
+  const meta = [];
+  if (!masked) meta.push(`<span class="dom">${escapeHtml(it._dom || "page")}</span>`);
+  meta.push(`<span title="${inDone ? "Done" : "Saved"} ${escapeHtml(fullDate(when))}">${inDone ? "done " : ""}${ago(when)}</span>`);
+  const showGroup = inDone || S.searching || (S.view === "all" && S.groupByAll !== "group");
+  if (showGroup && g && (S.view === "all" || inDone)) {
+    meta.push(`<span class="chip"><span class="gdot c-${g.color || "grey"}"></span>${escapeHtml(g.name)}</span>`);
+  }
+  if (it.openedAt && !inDone) meta.push(`<span class="opened" title="Last opened ${escapeHtml(fullDate(it.openedAt))}">opened ${ago(it.openedAt)}</span>`);
+
+  const fav = masked ? `<span class="fav fav-fallback">${icon("i-lock")}</span>` : `<img class="fav" src="${favUrl(it.url)}" alt="" draggable="false">`;
+  const title = masked ? "Hidden (private group)" : S.tokens.length ? highlight(it.title, S.tokens) : escapeHtml(it.title);
+  el.innerHTML = `<span class="pick" data-act="pick" title="Select (X)">${fav}<span class="box">${icon("i-check")}</span></span><span class="body"><span class="title"${
+    masked ? "" : ` title="${escapeHtml(it.title + "\n" + it.url)}"`
+  }>${title}</span><span class="meta">${meta.join('<span class="sep">·</span>')}</span></span><span class="acts"><button type="button" tabindex="-1" data-act="bg" title="Open in a background tab (Ctrl+Enter)">${icon(
+    "i-arrow-up-right"
+  )}</button><button type="button" tabindex="-1" data-act="done" title="${inDone ? "Restore (E)" : "Done with it (E)"}">${icon(inDone ? "i-undo" : "i-check")}</button><button type="button" tabindex="-1" data-act="more" title="More">${icon(
+    "i-more"
+  )}</button></span>`;
+}
+
+function updateSticky(top) {
+  const sticky = els.sticky;
+  persistUi();
+  const heads = S.heads;
+  if (!heads.length || top <= 0) {
+    sticky.hidden = true;
+    return;
+  }
+  const offsets = list.offsets;
+  let lo = 0;
+  let hi = heads.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (offsets[heads[mid]] <= top) {
+      found = mid;
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
+  if (found < 0) {
+    sticky.hidden = true;
+    return;
+  }
+  const row = S.rows[heads[found]];
+  if (sticky.__row !== row) {
+    sticky.className = "sticky row head" + (row.folded ? " folded" : "") + (row.gid ? " ghead" : "");
+    sticky.innerHTML = headHtml(row);
+    sticky.__row = row;
+  }
+  const next = heads[found + 1];
+  const push = next !== undefined ? Math.min(0, offsets[next] - top - HEAD_H) : 0;
+  sticky.style.transform = `translateY(${push}px)`;
+  sticky.style.right = els.list.offsetWidth - els.list.clientWidth + "px";
+  sticky.hidden = false;
+}
