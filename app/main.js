@@ -873,3 +873,209 @@ function setFoldAll(fold) {
   }
   renderList({ resetScroll: true });
 }
+
+// ===========================================================================
+// Actions on saved tabs
+// ===========================================================================
+
+const isBlankTab = (t) => /^[a-z-]+:\/\/(newtab|new-tab-page)\/?$/i.test(t?.url || t?.pendingUrl || "");
+
+async function openOne(it, { background = false } = {}) {
+  try {
+    const win = await chrome.windows.getCurrent();
+    const tabs = await chrome.tabs.query({ windowId: win.id });
+    const already = tabs.find((t) => urlInfo(t.url || t.pendingUrl || "").key === it._key);
+    const current = tabs.find((t) => t.active);
+    if (already && !background) {
+      await chrome.tabs.update(already.id, { active: true });
+    } else if (!background && current && isBlankTab(current)) {
+      await chrome.tabs.update(current.id, { url: it.url });
+    } else {
+      // openerTabId: closing the new tab brings you straight back here.
+      await chrome.tabs.create({ windowId: win.id, url: it.url, active: !background, ...(current ? { openerTabId: current.id } : {}) });
+    }
+  } catch (e) {
+    console.error(e);
+    toast("Couldn't open that tab");
+    return;
+  }
+  await markOpened([it.id]);
+  if (background && S.prefs.onOpen !== "done") toast("Opened in a background tab");
+}
+
+async function markOpened(ids) {
+  const now = Date.now();
+  const toDone = S.prefs.onOpen === "done";
+  const { prev } = await db.patchItems(ids, (it) => (toDone && !it.doneAt ? { openedAt: now, doneAt: now } : { openedAt: now }));
+  if (toDone && prev.some((p) => !p.doneAt)) {
+    toast(ids.length === 1 ? "Opened and moved to Done" : `Opened ${ids.length} tabs and moved them to Done`, { undo: () => db.restore({ items: prev }) });
+  }
+}
+
+async function openMany(items) {
+  if (!items.length) return false;
+  if (
+    items.length > OPEN_MANY_CONFIRM &&
+    !(await confirmAction({ title: `Open ${items.length} tabs?`, text: "They open in the background, in a Chrome tab group per Tab Saver group.", ok: `Open ${items.length} tabs` }))
+  ) {
+    return false;
+  }
+  const win = await chrome.windows.getCurrent();
+  const byGroup = new Map();
+  for (const it of items) {
+    if (!byGroup.has(it._gid)) byGroup.set(it._gid, []);
+    byGroup.get(it._gid).push(it);
+  }
+  for (const [gid, groupItems] of byGroup) {
+    const tabIds = [];
+    for (const it of groupItems) {
+      const t = await chrome.tabs.create({ windowId: win.id, url: it.url, active: false }).catch(() => null);
+      if (t) tabIds.push(t.id);
+    }
+    if (!tabIds.length) continue;
+    try {
+      const chromeGroup = await chrome.tabs.group({ tabIds, createProperties: { windowId: win.id } });
+      const g = S.groupById.get(gid);
+      await chrome.tabGroups.update(chromeGroup, { title: g?.name || "Tab Saver", color: GROUP_COLORS.includes(g?.color) ? g.color : "grey" });
+    } catch {
+      /* tab groups unavailable: tabs are still open */
+    }
+  }
+  await markOpened(items.map((it) => it.id));
+  if (S.prefs.onOpen !== "done") toast(`Opened ${plural(items.length, "tab")}`);
+  return true;
+}
+
+function openGroup(gid) {
+  const items = S.items.filter((it) => it._gid === gid && !it.doneAt);
+  if (!items.length) return toast("Nothing to open in this group");
+  db.patchGroup(gid, { openedAt: Date.now() });
+  return openMany(items);
+}
+
+async function setDone(ids, done) {
+  const items = ids.map((id) => S.itemById.get(id)).filter(Boolean);
+  if (!items.length) return false;
+  rememberCursor();
+  const { prev } = await db.patchItems(
+    items.map((it) => it.id),
+    done ? (it) => (it.doneAt ? {} : { doneAt: Date.now() }) : { doneAt: null }
+  );
+  const what = items.length === 1 ? `“${shorten(items[0].title, 40)}”` : plural(items.length, "tab");
+  toast(done ? `${what} moved to Done` : `${what} restored`, { undo: () => db.restore({ items: prev }) });
+  return true;
+}
+
+function toggleDone(ids) {
+  const items = ids.map((id) => S.itemById.get(id)).filter(Boolean);
+  return setDone(ids, items.some((it) => !it.doneAt));
+}
+
+async function removeItems(ids) {
+  if (!ids.length) return false;
+  rememberCursor();
+  const { prev } = await db.deleteItems(ids);
+  if (!prev.length) return false;
+  toast(prev.length === 1 ? `Deleted “${shorten(prev[0].title, 40)}”` : `Deleted ${plural(prev.length, "tab")}`, { undo: () => db.restore({ items: prev }) });
+  return true;
+}
+
+async function chooseGroup(anchor, { title, currentId = null }) {
+  const groups = S.groups.filter((g) => g.kind !== "session" || g.id === currentId);
+  const pick = await pickGroup(anchor, { title, groups, currentId });
+  if (!pick) return null;
+  if (pick.create) {
+    const g = await db.createGroup(pick.create);
+    return { id: g.id, name: g.name, created: g.created };
+  }
+  const g = S.groupById.get(pick.id);
+  return g ? { id: g.id, name: g.name, created: false } : null;
+}
+
+async function moveItems(ids, anchor) {
+  const items = ids.map((id) => S.itemById.get(id)).filter(Boolean);
+  if (!items.length) return false;
+  const current = items.every((it) => it._gid === items[0]._gid) ? items[0]._gid : null;
+  const target = await chooseGroup(anchor, { title: items.length === 1 ? "Move to" : `Move ${items.length} tabs to`, currentId: current });
+  if (!target || target.id === current) return false;
+  rememberCursor();
+  const { prev } = await db.patchItems(
+    items.map((it) => it.id),
+    { groupId: target.id }
+  );
+  toast(`Moved ${plural(items.length, "tab")} to ${target.name}`, {
+    undo: () => db.restore({ items: prev, removeGroupIds: target.created ? [target.id] : [] }),
+  });
+  return true;
+}
+
+async function renameItem(it) {
+  const title = await promptText({ title: "Rename saved tab", value: it.title, okLabel: "Rename", maxLength: 300 });
+  if (!title || title === it.title) return;
+  const { prev } = await db.patchItems([it.id], { title });
+  toast("Renamed", { undo: () => db.restore({ items: prev }) });
+}
+
+async function copyLinks(ids) {
+  const items = ids.map((id) => S.itemById.get(id)).filter(Boolean);
+  if (!items.length) return;
+  try {
+    await navigator.clipboard.writeText(items.map((it) => it.url).join("\n"));
+    toast(items.length === 1 ? "Link copied" : `${items.length} links copied`);
+  } catch {
+    toast("Couldn't copy to the clipboard");
+  }
+}
+
+async function bulk(action, anchor) {
+  const ids = [...S.selected];
+  if (!ids.length) return;
+  let done = false;
+  if (action === "open") done = await openMany(ids.map((id) => S.itemById.get(id)).filter(Boolean));
+  else if (action === "move") done = await moveItems(ids, anchor);
+  else if (action === "done") done = await toggleDone(ids);
+  else if (action === "delete") done = await removeItems(ids);
+  else if (action === "copy") {
+    await copyLinks(ids);
+    return;
+  }
+  if (done) clearSelection();
+}
+
+async function itemMenu(it, anchor) {
+  if (S.selected.size > 1 && S.selected.has(it.id)) return selectionMenu(anchor);
+  const inDone = !!it.doneAt;
+  const v = await openMenu(anchor, [
+    { label: "Open", value: "open", icon: "i-external", hint: "Enter", key: "o" },
+    { label: "Open in background", value: "bg", icon: "i-arrow-up-right", hint: "Ctrl+Enter", key: "b" },
+    { label: "Copy link", value: "copy", icon: "i-link", hint: "C", key: "c" },
+    { sep: true },
+    { label: inDone ? "Restore from Done" : "Done with it", value: "done", icon: inDone ? "i-undo" : "i-check", hint: "E", key: "e" },
+    { label: "Move to group…", value: "move", icon: "i-folder", hint: "M", key: "m" },
+    { label: "Rename…", value: "rename", icon: "i-edit", hint: "R", key: "r" },
+    { label: S.selected.has(it.id) ? "Unselect" : "Select", value: "select", icon: "i-check-square", hint: "X", key: "x" },
+    { sep: true },
+    { label: "Delete", value: "delete", icon: "i-trash", hint: "Del", danger: true },
+  ]);
+  if (v === "open") openOne(it);
+  else if (v === "bg") openOne(it, { background: true });
+  else if (v === "copy") copyLinks([it.id]);
+  else if (v === "done") setDone([it.id], !inDone);
+  else if (v === "move") moveItems([it.id], anchor);
+  else if (v === "rename") renameItem(it);
+  else if (v === "select") toggleSelect(it.id);
+  else if (v === "delete") removeItems([it.id]);
+}
+
+async function selectionMenu(anchor) {
+  const n = S.selected.size;
+  const v = await openMenu(anchor, [
+    { label: `Open ${n} tabs`, value: "open", icon: "i-external" },
+    { label: "Move to group…", value: "move", icon: "i-folder", hint: "M", key: "m" },
+    { label: "Done with them", value: "done", icon: "i-check", hint: "E", key: "e" },
+    { label: "Copy links", value: "copy", icon: "i-link", hint: "C", key: "c" },
+    { sep: true },
+    { label: `Delete ${n} tabs`, value: "delete", icon: "i-trash", hint: "Del", danger: true },
+  ]);
+  if (v) bulk(v, anchor);
+}
