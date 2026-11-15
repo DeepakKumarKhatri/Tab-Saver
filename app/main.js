@@ -863,6 +863,7 @@ function toggleFold(row) {
 }
 
 function setFoldAll(fold) {
+  const groupIds = [];
   for (const i of S.heads) {
     const row = S.rows[i];
     if (row.gid) {
@@ -870,10 +871,11 @@ function setFoldAll(fold) {
       if (!g || !!g.collapsed === fold) continue;
       if (fold) g.collapsed = true;
       else delete g.collapsed;
-      db.patchGroup(row.gid, { collapsed: fold });
+      groupIds.push(row.gid);
     } else if (fold) S.folded.add(row.key);
     else S.folded.delete(row.key);
   }
+  if (groupIds.length) db.patchGroups(groupIds, { collapsed: fold });
   renderList({ resetScroll: true });
 }
 
