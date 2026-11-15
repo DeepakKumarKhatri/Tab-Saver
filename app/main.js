@@ -701,3 +701,175 @@ async function onCurrentClick(e) {
     }
   }
 }
+
+// ===========================================================================
+// Views, search, selection, keyboard cursor
+// ===========================================================================
+
+function setView(view) {
+  if (!isValidView(view)) view = "all";
+  const changed = view !== S.view;
+  S.view = view;
+  if (changed) {
+    S.selected.clear();
+    S.activeId = null;
+    S.lastActiveIndex = 0;
+  }
+  closeNav();
+  renderAll({ resetScroll: changed });
+  persistUi();
+}
+
+function setQuery(q) {
+  if (els.search.value !== q) els.search.value = q;
+  if (q === S.query) return;
+  S.query = q;
+  S.tokens = tokenize(q);
+  S.activeId = null;
+  S.lastActiveIndex = 0;
+  renderList({ resetScroll: true });
+  renderToolbar();
+  persistUi();
+}
+
+let queryFrame = 0;
+function onSearchInput() {
+  cancelAnimationFrame(queryFrame);
+  queryFrame = requestAnimationFrame(() => setQuery(els.search.value));
+}
+
+function focusSearch() {
+  closeNav();
+  els.search.focus();
+  els.search.select();
+}
+
+function revealItem(id) {
+  const it = S.itemById.get(id);
+  if (!it) return;
+  setQuery("");
+  setView(it.doneAt ? "done" : isHidden(it._gid) || S.groupByAll === "group" ? it._gid : "all");
+  if (!S.orderIndex.has(id)) {
+    // The item may sit in a folded section: unfold it.
+    const g = S.groupById.get(it._gid);
+    if (g?.collapsed) delete g.collapsed;
+    S.folded.clear();
+    renderList();
+  }
+  els.list.focus({ preventScroll: true });
+  setActive(id, true);
+}
+
+function syncActiveAria() {
+  const id = S.activeId && S.rowIndex.has(S.activeId) ? "opt-" + S.activeId : "";
+  for (const el of [els.list, els.search]) {
+    if (id) el.setAttribute("aria-activedescendant", id);
+    else el.removeAttribute("aria-activedescendant");
+  }
+}
+
+function refreshStates() {
+  list.forEachRendered((el, row) => {
+    if (row.t !== "item") return;
+    const id = row.it.id;
+    const sel = S.selected.has(id);
+    el.classList.toggle("sel", sel);
+    el.classList.toggle("active", id === S.activeId);
+    el.setAttribute("aria-selected", sel ? "true" : "false");
+  });
+  renderSelbar();
+}
+
+function setActive(id, scroll = false) {
+  S.activeId = id;
+  if (id && S.orderIndex.has(id)) S.lastActiveIndex = S.orderIndex.get(id);
+  if (scroll && id && S.rowIndex.has(id)) list.ensureVisible(S.rowIndex.get(id), S.heads.length ? HEAD_H : 0);
+  refreshStates();
+  syncActiveAria();
+  persistUi();
+}
+
+function moveActive(delta, edge) {
+  const n = S.order.length;
+  if (!n) return;
+  let i = S.activeId && S.orderIndex.has(S.activeId) ? S.orderIndex.get(S.activeId) : -1;
+  if (edge === "start") i = 0;
+  else if (edge === "end") i = n - 1;
+  else if (i < 0) i = delta >= 0 ? 0 : n - 1;
+  else i = Math.max(0, Math.min(n - 1, i + delta));
+  setActive(S.order[i].id, true);
+}
+
+function toggleSelect(id, range = false) {
+  if (range && S.anchorId && S.anchorId !== id && S.orderIndex.has(S.anchorId) && S.orderIndex.has(id)) {
+    const a = S.orderIndex.get(S.anchorId);
+    const b = S.orderIndex.get(id);
+    for (let i = Math.min(a, b); i <= Math.max(a, b); i++) S.selected.add(S.order[i].id);
+  } else {
+    if (S.selected.has(id)) S.selected.delete(id);
+    else S.selected.add(id);
+    S.anchorId = id;
+  }
+  refreshStates();
+}
+
+function clearSelection() {
+  S.selected.clear();
+  S.anchorId = null;
+  refreshStates();
+}
+
+function selectAll() {
+  for (const it of S.order) S.selected.add(it.id);
+  refreshStates();
+}
+
+/** What a keyboard action applies to: the selection if there is one, else the item under the cursor. */
+function targets() {
+  if (S.selected.size) return [...S.selected];
+  return S.activeId && S.itemById.has(S.activeId) ? [S.activeId] : [];
+}
+
+function rowAnchor(id) {
+  let found = null;
+  list.forEachRendered((el, row) => {
+    if (row.t === "item" && row.it.id === id) found = el.querySelector("[data-act=more]") || el;
+  });
+  return found || els.list;
+}
+
+function rememberCursor() {
+  if (S.activeId && S.orderIndex.has(S.activeId)) S.lastActiveIndex = S.orderIndex.get(S.activeId);
+}
+
+function toggleFold(row) {
+  if (!row) return;
+  if (row.gid) {
+    const g = S.groupById.get(row.gid);
+    if (!g) return;
+    const collapsed = !g.collapsed;
+    if (collapsed) g.collapsed = true;
+    else delete g.collapsed;
+    db.patchGroup(row.gid, { collapsed });
+  } else if (S.folded.has(row.key)) S.folded.delete(row.key);
+  else S.folded.add(row.key);
+  renderList();
+  // Keep the header that was clicked in view.
+  const i = S.rows.findIndex((r) => r.key === row.key);
+  if (i >= 0 && list.offsets[i] < els.list.scrollTop) list.scrollTop = list.offsets[i];
+}
+
+function setFoldAll(fold) {
+  for (const i of S.heads) {
+    const row = S.rows[i];
+    if (row.gid) {
+      const g = S.groupById.get(row.gid);
+      if (!g || !!g.collapsed === fold) continue;
+      if (fold) g.collapsed = true;
+      else delete g.collapsed;
+      db.patchGroup(row.gid, { collapsed: fold });
+    } else if (fold) S.folded.add(row.key);
+    else S.folded.delete(row.key);
+  }
+  renderList({ resetScroll: true });
+}
