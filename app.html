@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tab Saver</title>
+    <link rel="icon" href="icons/icon16.png" />
+    <link rel="stylesheet" href="app/app.css" />
+    <script type="module" src="app/main.js"></script>
+  </head>
+  <body>
+    <svg class="sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7.5" /><line x1="21" y1="21" x2="16.4" y2="16.4" /></symbol>
+        <symbol id="i-menu" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></symbol>
+        <symbol id="i-maximize" viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" /></symbol>
+        <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" /></symbol>
+        <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" /></symbol>
+        <symbol id="i-check-circle" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></symbol>
+        <symbol id="i-check-square" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></symbol>
+        <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></symbol>
+        <symbol id="i-chevron-down" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9" /></symbol>
+        <symbol id="i-chevron-right" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6" /></symbol>
+        <symbol id="i-x" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></symbol>
+        <symbol id="i-edit" viewBox="0 0 24 24"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></symbol>
+        <symbol id="i-folder" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></symbol>
+        <symbol id="i-inbox" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></symbol>
+        <symbol id="i-undo" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></symbol>
+        <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></symbol>
+        <symbol id="i-eye" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></symbol>
+        <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></symbol>
+        <symbol id="i-external" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></symbol>
+        <symbol id="i-arrow-up-right" viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7" /><polyline points="7 7 17 7 17 17" /></symbol>
+        <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" /><polyline points="12 6.5 12 12 15.5 14" /></symbol>
+        <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></symbol>
+        <symbol id="i-sliders" viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" /></symbol>
+        <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" /><line x1="2.5" y1="12" x2="21.5" y2="12" /><path d="M12 2.5a14.5 14.5 0 0 1 3.8 9.5 14.5 14.5 0 0 1-3.8 9.5 14.5 14.5 0 0 1-3.8-9.5A14.5 14.5 0 0 1 12 2.5z" /></symbol>
+        <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></symbol>
+        <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></symbol>
+        <symbol id="i-layers" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></symbol>
+        <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M10 13h4M7 16h10" /></symbol>
+        <symbol id="i-folder-plus" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /><line x1="12" y1="11" x2="12" y2="17" /><line x1="9" y1="14" x2="15" y2="14" /></symbol>
+      </defs>
+    </svg>
+
+    <div class="app" id="app">
+      <aside class="sidebar" id="sidebar" aria-label="Groups">
+        <div class="brand"><img src="icons/icon48.png" alt="" width="22" height="22" /><span>Tab Saver</span></div>
+        <nav class="nav" id="nav"></nav>
+      </aside>
+      <div class="scrim" id="scrim" hidden></div>
+
+      <main class="main">
+        <div class="top-left">
+          <button class="icon-btn" id="navToggle" type="button" title="Groups" aria-label="Show groups" aria-controls="sidebar" aria-expanded="false">
+            <svg class="ico"><use href="#i-menu" /></svg>
+          </button>
+          <div class="brand"><img src="icons/icon48.png" alt="" width="20" height="20" /><span>Tab Saver</span></div>
+        </div>
+
+        <div class="top-actions">
+          <button class="btn" id="saveWindowBtn" type="button" title="Save all tabs in this window">
+            <svg class="ico"><use href="#i-layers" /></svg><span class="lbl">Save open tabs</span>
+          </button>
+          <button class="icon-btn" id="switchSurfaceBtn" type="button" title="Open in a full tab">
+            <svg class="ico"><use href="#i-maximize" /></svg>
+          </button>
+          <button class="icon-btn" id="settingsBtn" type="button" title="Settings">
+            <svg class="ico"><use href="#i-settings" /></svg>
+          </button>
+        </div>
+
+        <section class="current" id="current" aria-label="Current tab" hidden></section>
+
+        <div class="search">
+          <svg class="ico"><use href="#i-search" /></svg>
+          <input
+            id="search"
+            type="search"
+            placeholder="Search saved tabs"
+            autocomplete="off"
+            spellcheck="false"
+            role="combobox"
+            aria-label="Search saved tabs"
+            aria-controls="list"
+            aria-expanded="true"
+            aria-autocomplete="list"
+          />
+          <kbd class="search-kbd">/</kbd>
+        </div>
+
+        <div class="toolbar" id="toolbar">
+          <button class="view-btn" id="viewBtn" type="button">
+            <span class="view-ico" id="viewIcon"></span>
+            <span class="view-name" id="viewName">All saved</span>
+            <span class="view-count" id="viewCount"></span>
+            <svg class="ico chev"><use href="#i-chevron-down" /></svg>
+          </button>
+          <span class="grow"></span>
+          <button class="tool-btn" id="optionsBtn" type="button" title="Group and sort">
+            <svg class="ico"><use href="#i-sliders" /></svg><span id="optionsLabel"></span>
+          </button>
+          <button class="icon-btn" id="viewMenuBtn" type="button" title="More actions">
+            <svg class="ico"><use href="#i-more" /></svg>
+          </button>
+        </div>
+
+        <div class="selbar" id="selbar" hidden>
+          <button class="icon-btn" id="selClear" type="button" title="Clear selection (Esc)">
+            <svg class="ico"><use href="#i-x" /></svg>
+          </button>
+          <span class="sel-count" id="selCount"></span>
+          <button class="link-btn" id="selAll" type="button">Select all</button>
+          <span class="grow"></span>
+          <button class="tool-btn" data-bulk="open" type="button" title="Open selected"><svg class="ico"><use href="#i-external" /></svg><span>Open</span></button>
+          <button class="tool-btn" data-bulk="move" type="button" title="Move selected (M)"><svg class="ico"><use href="#i-folder" /></svg><span>Move</span></button>
+          <button class="tool-btn" data-bulk="done" type="button" title="Mark selected as done (E)"><svg class="ico"><use href="#i-check" /></svg><span id="selDoneLabel">Done</span></button>
+          <button class="tool-btn danger" data-bulk="delete" type="button" title="Delete selected (Del)"><svg class="ico"><use href="#i-trash" /></svg><span>Delete</span></button>
+        </div>
+
+        <div class="list-wrap">
+          <div class="list" id="list" role="listbox" tabindex="0" aria-label="Saved tabs" aria-multiselectable="true"></div>
+          <div class="sticky" id="sticky" aria-hidden="true" hidden></div>
+          <div class="empty" id="empty" hidden></div>
+        </div>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  </body>
+</html>
