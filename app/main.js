@@ -108,6 +108,7 @@ async function init() {
     })
     .catch(() => {});
   els.search.focus({ preventScroll: true });
+  if (chrome.__mock) window.__tabSaver = { S, list, renderList, setQuery }; // dev harness only
 }
 
 function restoreUi() {
