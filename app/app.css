@@ -899,3 +899,383 @@ mark {
   font-weight: 650;
   white-space: nowrap;
 }
+
+/* ---------------------------------------------------------------- list */
+
+.list {
+  position: absolute;
+  inset: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  outline: none;
+  overscroll-behavior: contain;
+}
+
+.vl-canvas {
+  position: relative;
+  width: 100%;
+  margin-bottom: 24px;
+}
+
+.row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  contain: layout style;
+  user-select: none;
+}
+
+.row.item {
+  --row-bg: var(--bg);
+  left: 6px;
+  right: 6px;
+  height: var(--row-h);
+  gap: 10px;
+  padding: 0 8px 0 6px;
+  border-radius: 9px;
+  background: var(--row-bg);
+  cursor: pointer;
+}
+
+.row.item:hover {
+  --row-bg: var(--hover);
+}
+
+.row.item.sel {
+  --row-bg: var(--sel);
+}
+
+.row.item.sel:hover {
+  --row-bg: var(--sel-hover);
+}
+
+.list:focus .row.item.active,
+.app.searching .row.item.active {
+  box-shadow: inset 0 0 0 1.5px var(--accent-line);
+}
+
+.pick {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+
+.fav {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+}
+
+.fav-fallback {
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+}
+
+.box {
+  position: absolute;
+  inset: 6px;
+  display: none;
+  place-items: center;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--on-accent);
+}
+
+.box .ico {
+  width: 12px;
+  height: 12px;
+  stroke-width: 3.2;
+  opacity: 0;
+}
+
+.pick:hover .box,
+.selecting .row.item .box {
+  display: grid;
+}
+
+.row.item.sel .box {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.row.item.sel .box .ico {
+  opacity: 1;
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.title {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.meta > span {
+  flex: none;
+}
+
+.meta .dom,
+.meta .chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meta .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.meta .chip .gdot {
+  width: 7px;
+  height: 7px;
+  margin: 0;
+}
+
+.sep {
+  color: var(--border-strong);
+}
+
+.opened {
+  color: var(--accent);
+}
+
+.row.masked .title {
+  color: var(--text-3);
+  font-style: italic;
+}
+
+.acts {
+  position: absolute;
+  top: 0;
+  right: 4px;
+  bottom: 0;
+  display: none;
+  align-items: center;
+  gap: 2px;
+  padding-left: 30px;
+  border-radius: 0 9px 9px 0;
+  background: linear-gradient(90deg, transparent, var(--row-bg) 26px);
+}
+
+.row.item:hover .acts {
+  display: flex;
+}
+
+.acts button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.acts button:hover {
+  background: var(--hover-strong);
+  color: var(--text);
+}
+
+.acts [data-act="done"]:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.row.head {
+  height: var(--head-h);
+  gap: 7px;
+  padding: 0 10px 0 14px;
+  background: var(--bg);
+  color: var(--text-3);
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.row.head.ghead {
+  color: var(--text-2);
+  font-size: 12.5px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.row.head:hover {
+  color: var(--text);
+}
+
+.fold {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-3);
+  transition: transform 0.15s;
+}
+
+.fold .ico {
+  width: 14px;
+  height: 14px;
+}
+
+.row.head.folded .fold {
+  transform: rotate(-90deg);
+}
+
+.h-ico {
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+}
+
+.h-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.h-count {
+  color: var(--text-3);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.h-acts {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+}
+
+.row.head:hover .h-acts {
+  opacity: 1;
+}
+
+.h-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.h-btn .ico {
+  width: 14px;
+  height: 14px;
+}
+
+.h-btn:hover {
+  background: var(--hover-strong);
+  color: var(--text);
+}
+
+.row.hint {
+  height: var(--hint-h);
+  padding: 0 18px;
+  font-size: 12.5px;
+}
+
+.sticky {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  box-shadow: 0 1px 0 var(--border);
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: var(--text-2);
+  text-align: center;
+  pointer-events: none;
+}
+
+.empty > * {
+  pointer-events: auto;
+}
+
+.empty h3 {
+  margin: 0 0 6px;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.empty p {
+  max-width: 360px;
+  margin: 0 0 10px;
+  line-height: 1.5;
+}
+
+.empty .ico {
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+}
+
+.hello {
+  max-width: 380px;
+}
+
+.hello img {
+  margin-bottom: 6px;
+}
+
+.hello ul {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  line-height: 1.8;
+  text-align: left;
+}
