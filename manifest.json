@@ -1,23 +1,49 @@
 {
-    "manifest_version": 3,
-    "name": "Tab Saver",
-    "version": "3.0.0",
-    "description": "Save and manage your tabs for later.",
-    "permissions": ["tabs", "storage", "tabGroups", "notifications"],
-    "action": {
-      "default_popup": "popup.html",
-      "default_icon": {
-        "16": "icons/icon16.png",
-        "48": "icons/icon48.png",
-        "128": "icons/icon128.png"
-      }
-    },
-    "background": {
-      "service_worker": "background.js"
-    },
-    "icons": {
+  "manifest_version": 3,
+  "name": "Tab Saver",
+  "version": "4.0.0",
+  "description": "Save tabs for later, keep them in groups, and find any of them in a second.",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "tabs",
+    "tabGroups",
+    "sidePanel",
+    "contextMenus",
+    "favicon",
+    "scripting",
+    "activeTab",
+    "notifications"
+  ],
+  "action": {
+    "default_title": "Tab Saver",
+    "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
+  },
+  "side_panel": {
+    "default_path": "app.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "commands": {
+    "save-tab": {
+      "suggested_key": { "default": "Alt+Shift+S", "mac": "Alt+Shift+S" },
+      "description": "Save the current tab"
+    },
+    "open-tab-saver": {
+      "suggested_key": { "default": "Alt+Shift+L", "mac": "Alt+Shift+L" },
+      "description": "Open Tab Saver"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   }
+}

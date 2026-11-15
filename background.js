@@ -1,118 +1,50 @@
-// Background service worker for Tab Saver
-// Handles auto-save functionality when browser is closing
+// Tab Saver background service worker.
+//   - Toolbar icon opens the side panel (falls back to a full tab where side panels don't exist)
+//   - Keyboard shortcuts: save the current tab, open Tab Saver
+//   - Right-click menus: "Save page to Tab Saver" and "Save link to Tab Saver" (pick a group)
+//   - Optional: when Chrome restarts, save the tabs that were open last time as a "Session" group
 
-let tabSnapshot = [];
+import { ensureSchema, loadState, saveTabs, UNSORTED } from "./lib/db.js";
+import { isSaveable, titleFromUrl, fullDate } from "./lib/util.js";
 
-// Keep a running snapshot of all open tabs
-async function updateTabSnapshot() {
-  try {
-    const windows = await chrome.windows.getAll({ populate: true });
-    tabSnapshot = windows
-      .filter((w) => w.type === "normal")
-      .flatMap((w) => w.tabs)
-      .filter(
-        (t) =>
-          t.url &&
-          !t.url.startsWith("chrome://") &&
-          !t.url.startsWith("chrome-extension://")
-      )
-      .map((t) => ({
-        url: t.url,
-        title: t.title,
-        favicon: t.favIconUrl,
-      }));
-  } catch (e) {
-    // Ignore errors during shutdown
+const APP_URL = chrome.runtime.getURL("app.html");
+const SNAPSHOT_KEY = "openTabsSnapshot";
+const MENU_GROUP_LIMIT = 25;
+const OK_COLOR = "#0d7377";
+const ERR_COLOR = "#c53030";
+
+// ---------------------------------------------------------------------------
+// Toolbar icon
+// ---------------------------------------------------------------------------
+
+if (chrome.sidePanel?.setPanelBehavior) {
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+}
+// Only fires when the side panel is not handling the click (older or non-Chrome browsers).
+chrome.action.onClicked.addListener((tab) => openFullPage(tab?.windowId));
+
+async function openFullPage(windowId) {
+  const tabs = await chrome.tabs.query({});
+  const open = tabs.find((t) => t.url?.startsWith(APP_URL) && t.url.includes("mode=page"));
+  if (open) {
+    await chrome.tabs.update(open.id, { active: true });
+    await chrome.windows.update(open.windowId, { focused: true });
+  } else {
+    await chrome.tabs.create({ url: APP_URL + "?mode=page", ...(windowId ? { windowId } : {}) });
   }
 }
 
-// Update snapshot on tab changes
-chrome.tabs.onCreated.addListener(updateTabSnapshot);
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.status === "complete" || changeInfo.url) {
-    updateTabSnapshot();
-  }
-});
-chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
-  if (!removeInfo.isWindowClosing) {
-    updateTabSnapshot();
-  }
+// ---------------------------------------------------------------------------
+// Install / startup
+// ---------------------------------------------------------------------------
+
+chrome.runtime.onInstalled.addListener(async () => {
+  await chrome.storage.session.set({ sessionActive: true });
+  await ensureSchema();
+  await rebuildMenus();
+  scheduleSnapshot();
 });
 
-// Initial snapshot when service worker starts
-updateTabSnapshot();
-
-// When a window is removed, check if it was the last normal window
-chrome.windows.onRemoved.addListener(async () => {
-  try {
-    const { autoSaveEnabled = false } =
-      await chrome.storage.local.get("autoSaveEnabled");
-    if (!autoSaveEnabled) return;
-
-    const windows = await chrome.windows.getAll();
-    const normalWindows = windows.filter((w) => w.type === "normal");
-
-    if (normalWindows.length === 0 && tabSnapshot.length > 0) {
-      await autoSaveTabs(tabSnapshot);
-      tabSnapshot = [];
-    }
-  } catch (e) {
-    console.error("Error in onRemoved handler:", e);
-  }
-});
-
-// Auto-save tabs with timestamped category
-async function autoSaveTabs(tabs) {
-  if (!tabs || tabs.length === 0) return;
-
-  try {
-    const now = new Date();
-    const dateStr = now.toISOString().split("T")[0];
-    const timeStr = now.toTimeString().split(" ")[0].replace(/:/g, "");
-    const categoryName = `Auto-${dateStr}-${timeStr}`;
-
-    const { savedTabs = [], categories = ["All"] } =
-      await chrome.storage.local.get(["savedTabs", "categories"]);
-
-    if (!categories.includes(categoryName)) {
-      categories.push(categoryName);
-    }
-
-    const newTabs = tabs.map((tab) => ({
-      url: tab.url,
-      title: tab.title,
-      favicon: tab.favicon,
-      date: now.toISOString(),
-      category: categoryName,
-    }));
-
-    const existingUrls = new Set(savedTabs.map((t) => t.url));
-    const tabsToAdd = newTabs.filter((t) => !existingUrls.has(t.url));
-    const updatedTabs = [...savedTabs, ...tabsToAdd];
-
-    await chrome.storage.local.set({
-      savedTabs: updatedTabs,
-      categories: categories,
-    });
-
-    chrome.notifications.create({
-      type: "basic",
-      iconUrl: "icons/icon128.png",
-      title: "Tab Saver",
-      message: `Auto-saved ${tabsToAdd.length} tabs to category: ${categoryName}`,
-      priority: 2,
-    });
-  } catch (error) {
-    console.error("Error auto-saving tabs:", error);
-  }
-}
-
-// Listen for messages from popup
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "checkAutoSave") {
-    chrome.storage.local.get("autoSaveEnabled", (result) => {
-      sendResponse({ enabled: result.autoSaveEnabled || false });
-    });
-    return true;
-  }
+chrome.runtime.onStartup.addListener(() => {
+  handleStartup().catch((e) => console.error("Tab Saver startup:", e));
 });
