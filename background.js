@@ -170,3 +170,90 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 chrome.notifications.onClicked.addListener((id) => {
   if (id === "session") openFullPage();
 });
+
+// ---------------------------------------------------------------------------
+// Sessions: keep a snapshot of open tabs, and file it away on the next startup.
+// (Saving while Chrome is shutting down is unreliable, so we do it on the next start instead.)
+// ---------------------------------------------------------------------------
+
+let autoSaveOn = null;
+
+async function autoSaveEnabled() {
+  if (autoSaveOn === null) {
+    const { prefs } = await chrome.storage.local.get("prefs");
+    autoSaveOn = !!prefs?.autoSave;
+  }
+  return autoSaveOn;
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local") return;
+  if (changes.prefs) {
+    const on = !!changes.prefs.newValue?.autoSave;
+    const turnedOn = on && autoSaveOn === false;
+    autoSaveOn = on;
+    if (turnedOn) scheduleSnapshot();
+  }
+  if (changes.groups) rebuildMenus();
+});
+
+let snapshotTimer = 0;
+function scheduleSnapshot() {
+  clearTimeout(snapshotTimer);
+  snapshotTimer = setTimeout(() => takeSnapshot().catch(() => {}), 2000);
+}
+
+chrome.tabs.onCreated.addListener(scheduleSnapshot);
+chrome.tabs.onRemoved.addListener((_tabId, info) => {
+  if (!info.isWindowClosing) scheduleSnapshot();
+});
+chrome.tabs.onUpdated.addListener((_tabId, change) => {
+  if (change.url || change.title) scheduleSnapshot();
+});
+
+async function takeSnapshot() {
+  if (!(await autoSaveEnabled())) return;
+  const { sessionActive } = await chrome.storage.session.get("sessionActive");
+  if (!sessionActive) return; // startup hasn't filed the previous snapshot yet
+  const windows = await chrome.windows.getAll({ populate: true, windowTypes: ["normal"] });
+  const tabs = [];
+  for (const w of windows) {
+    if (w.incognito) continue;
+    for (const t of w.tabs || []) {
+      const url = t.url || t.pendingUrl;
+      if (isSaveable(url)) tabs.push({ url, title: t.title || "" });
+    }
+  }
+  if (tabs.length) await chrome.storage.local.set({ [SNAPSHOT_KEY]: { takenAt: Date.now(), tabs } });
+}
+
+async function handleStartup() {
+  // Read the previous snapshot before marking the session active, so no new snapshot can overwrite it first.
+  const [{ sessionActive }, local] = await Promise.all([
+    chrome.storage.session.get("sessionActive"),
+    chrome.storage.local.get([SNAPSHOT_KEY, "lastArchivedSnapshot", "prefs"]),
+  ]);
+  if (sessionActive) return;
+  await chrome.storage.session.set({ sessionActive: true });
+
+  const snap = local[SNAPSHOT_KEY];
+  if (local.prefs?.autoSave && snap?.tabs?.length && snap.takenAt !== local.lastArchivedSnapshot) {
+    await chrome.storage.local.set({ lastArchivedSnapshot: snap.takenAt });
+    const res = await saveTabs(snap.tabs, {
+      session: true,
+      groupName: "Session · " + fullDate(snap.takenAt),
+      existing: "skip",
+      remember: false,
+    });
+    const n = res.added.length + res.updated.length;
+    if (n) {
+      chrome.notifications.create("session", {
+        type: "basic",
+        iconUrl: "icons/icon128.png",
+        title: "Tab Saver",
+        message: `Saved ${n} tab${n === 1 ? "" : "s"} from your last session.`,
+      });
+    }
+  }
+  scheduleSnapshot();
+}
